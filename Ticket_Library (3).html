@@ -1757,6 +1757,7 @@
         <option value="date" id="sortDateOption">By date</option>
         <option value="venue">By venue</option>
         <option value="name" selected>By name</option>
+        <option value="shows">By tour size</option>
       </select>
       <button class="filter-btn" id="expandCollapseBtn" type="button" title="Toggle every section open or closed">⌃ Collapse</button>
       <div class="col-stepper" id="colStepper" title="Columns">
@@ -2825,7 +2826,7 @@ let sheets = []; // [{name, mode}] — identity is the sheet's name, matching ho
 let pendingEmptySheets = []; // sheets created locally that have no pushed rows yet, so a poll doesn't make them vanish
 let draggedSheetName = null; // tracks the tab currently being dragged for reordering
 let activeSheetName = null;
-let sortMode = 'date'; // 'date' | 'upload' | 'venue' | 'name' | 'rating' — standard-mode sheets only; US Open always groups by date
+let sortMode = 'date'; // 'date' | 'upload' | 'venue' | 'name' | 'shows' | 'rating' — standard-mode sheets only; US Open always groups by date
 let annotations = {}; // eventKey -> {note, rating (0-5), pinned, sections, archived, noteHistory} — used on every sheet, any mode
 // Cross-sheet search editing support: when a search result belongs to a
 // sheet other than the active one, its live (possibly-edited) event +
@@ -5481,6 +5482,21 @@ function groupByName(events){
   return groups;
 }
 
+// Same grouping as "By name" (same tour/artist buckets, same
+// same-date-different-venue conflict splitting) — just reordered
+// afterward by how many shows landed in each group, largest first, so
+// a big multi-city tour surfaces before a one-off single date instead
+// of wherever it happens to fall alphabetically. Ties (equal show
+// counts) fall back to alphabetical, so the order stays stable and
+// predictable rather than depending on incidental array order.
+function groupByShowCount(events){
+  const groups = groupByName(events);
+  return groups.slice().sort((a, b) => {
+    if(b.events.length !== a.events.length) return b.events.length - a.events.length;
+    return (a.heading || '').toLowerCase().localeCompare((b.heading || '').toLowerCase());
+  });
+}
+
 function render(){
   if(historyViewActive){
     updateModeUI();
@@ -5635,6 +5651,7 @@ function renderPresale(){
     const pinnedGroups = sortMode === 'upload' ? groupByUploadOrder(pinned)
       : sortMode === 'venue' ? groupByVenue(pinned)
       : sortMode === 'name' ? groupByName(pinned)
+      : sortMode === 'shows' ? groupByShowCount(pinned)
       : groupByPresaleOrShowDate(pinned);
     html += dayHeadingHtml('📌 Pinned');
     let pinnedPending = [];
@@ -5664,6 +5681,7 @@ function renderPresale(){
   const groups = sortMode === 'upload' ? groupByUploadOrder(rest)
     : sortMode === 'venue' ? groupByVenue(rest)
     : sortMode === 'name' ? groupByName(rest)
+    : sortMode === 'shows' ? groupByShowCount(rest)
     : groupByPresaleOrShowDate(rest);
   if((sortMode === 'name' || sortMode === 'venue') && groups.some(g => g.showHeading)){
     html += nameJumpBarHtml(groups);
@@ -6125,6 +6143,7 @@ function renderStandard(){
   const groups = sortMode === 'upload' ? groupByUploadOrder(rest)
     : sortMode === 'venue' ? groupByVenue(rest)
     : sortMode === 'name' ? groupByName(rest)
+    : sortMode === 'shows' ? groupByShowCount(rest)
     : groupByDate(rest);
 
   if(!groups.length && !pinned.length){
@@ -6148,6 +6167,7 @@ function renderStandard(){
     const pinnedGroups = sortMode === 'upload' ? groupByUploadOrder(pinned)
       : sortMode === 'venue' ? groupByVenue(pinned)
       : sortMode === 'name' ? groupByName(pinned)
+      : sortMode === 'shows' ? groupByShowCount(pinned)
       : groupByDate(pinned);
     htmlParts.push(dayHeadingHtml('📌 Pinned'));
     let pinnedPending = [];
@@ -7720,6 +7740,7 @@ function renderBroadway(){
   const topGroups = sortMode === 'upload' ? groupByUploadOrder(rest)
     : sortMode === 'venue' ? groupByVenue(rest)
     : sortMode === 'date' ? groupByDate(rest)
+    : sortMode === 'shows' ? groupByShowCount(rest)
     : groupByName(rest); // 'name' and default
 
   let html = '';
@@ -7734,6 +7755,7 @@ function renderBroadway(){
     const pinnedGroups = sortMode === 'upload' ? groupByUploadOrder(pinned)
       : sortMode === 'venue' ? groupByVenue(pinned)
       : sortMode === 'date' ? groupByDate(pinned)
+      : sortMode === 'shows' ? groupByShowCount(pinned)
       : groupByName(pinned);
     html += dayHeadingHtml('📌 Pinned');
     let pinnedPending = [];

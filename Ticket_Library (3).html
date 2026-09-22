@@ -395,10 +395,45 @@
   }
   .day-heading.collapsible-heading{cursor:pointer;user-select:none;gap:6px;}
   .day-heading.collapsible-heading:hover .heading-label{opacity:.8;}
+  /* The name itself has its own, more specific cursor/hover treatment —
+     clicking it copies the name rather than toggling shortcut mode like
+     the rest of the bar does, so it's worth reading as its own small
+     target rather than blending into the bar around it. */
+  .heading-label{cursor:copy;border-radius:4px;padding:1px 4px;margin:-1px -4px;transition:background .15s ease, color .15s ease;}
+  /* Heading-row icon buttons (pin, collapse, note, history) sized up
+     from the compact per-card buttons elsewhere — this row has real
+     room to spare, and "bigger, rounder, easier to click and see" was
+     a direct, specific ask (twice — the first size bump still wasn't
+     enough). The SVGs inside have their own width/height attributes
+     baked into the markup; CSS overrides those directly rather than
+     needing to touch every icon's own HTML. */
+  .heading-icons .icon-btn{width:34px;height:34px;border-radius:11px;}
+  .heading-icons .icon-btn svg{width:19px;height:19px;}
+  /* The big "Copy Link" pill that appears once a group is selected —
+     an actual labeled button rather than another small icon, since
+     it's meant to be the obvious, unmissable thing to reach for right
+     after turning shortcut mode on. */
+  .heading-copy-link-btn{
+    display:inline-flex;align-items:center;gap:5px;
+    background:var(--teal);color:#0d1a19;border:none;border-radius:999px;
+    padding:5px 12px;font-size:11.5px;font-weight:700;
+    font-family:system-ui, -apple-system, sans-serif;
+    cursor:pointer;white-space:nowrap;flex:0 0 auto;
+    transition:transform .1s ease, filter .15s ease;
+  }
+  .heading-copy-link-btn:hover{filter:brightness(1.08);}
+  .heading-copy-link-btn:active{transform:scale(.96);}
+  .heading-copy-link-btn.copied .icon-copy{display:none;}
+  .heading-copy-link-btn.copied .icon-check{display:block;}
+  .heading-label:hover{background:var(--card-hover);}
+  .heading-label.copied-flash{background:var(--teal);color:#0d1a19;}
   .collapse-caret{flex:0 0 auto;opacity:.55;transition:transform .15s ease;}
   .day-heading.collapsible-heading.collapsed .collapse-caret{transform:rotate(-90deg);}
   .day-heading.collapsible-heading.collapsed + .day-grid{display:none;}
   .day-heading.collapsible-heading.collapsed{opacity:.7;}
+  /* The heading currently "selected" for the number-key shortcuts —
+     see the keydown/click handlers further down. */
+  .day-heading.tl-shortcut-selected{outline:2px solid var(--teal, #4fc8bf);outline-offset:-2px;border-radius:6px;}
   /* Presale's "By presale time" view nests two heading levels — the
      hour ("10:00 AM presale") and, inside it, each artist. They used to
      share the exact same heading style, which made the hierarchy
@@ -586,6 +621,21 @@
     container-type:inline-size;
   }
   .ticket:hover{border-color:#4a4950;box-shadow:0 4px 14px rgba(0,0,0,.28), 0 1px 0 rgba(255,255,255,.02) inset;}
+  /* The number/letter badge showing which keyboard shortcut opens this
+     specific card — only appears on cards belonging to the currently
+     selected group (see tlMarkSelectedGroupInDom), added directly as a
+     DOM node rather than through the normal render cycle. */
+  .tl-shortcut-badge{
+    position:absolute; top:7px; right:7px; z-index:3;
+    min-width:25px; height:25px; padding:0 6px;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--teal, #4fc8bf); color:#0d1a19;
+    font-size:14px; font-weight:900; font-family:system-ui, -apple-system, sans-serif;
+    border-radius:6px; text-transform:uppercase;
+    border:1.5px solid rgba(13,26,25,.25);
+    box-shadow:0 2px 6px rgba(0,0,0,.5);
+    pointer-events:none;
+  }
   .ticket.shift-day{border-left-color:var(--day-color);background:var(--day-bg);}
   .ticket.shift-night{border-left-color:var(--night-color);background:var(--night-bg);}
   .ticket.is-pinned{border-color:var(--pin);border-left-color:var(--pin);}
@@ -1500,9 +1550,67 @@
 
   /* ---------- Empty state ---------- */
   .empty{
+    display:none; /* JS shows this explicitly once it's actually confirmed the
+       active sheet has no events — leaving this visible by default meant it
+       flashed on screen on every single page load/refresh, real content or
+       not, since the browser paints the raw HTML before any JS has run. */
     max-width:520px;margin:80px auto;text-align:center;
     padding:0 24px;
   }
+  /* Shown only for the brief moment between the page painting and the
+     first real fetch resolving — gets fully overwritten the instant
+     render() runs for real, so this never lingers alongside actual
+     content. Exists so a refresh reads as "this is loading" rather than
+     either a blank flash of nothing or (worse, before the fix right
+     above this) a flash of "this sheet is empty, go upload something." */
+  .loading-placeholder{
+    max-width:520px;margin:80px auto;text-align:center;
+    color:var(--muted);font-size:14.5px;
+  }
+  /* Small floating "last key pressed" reminder + 3 quick copy/paste
+     slots. Collapsed to just the badge by default — a real, live
+     screenshot showed the expanded version sitting directly on top of
+     the search box and other header controls, which is exactly the
+     kind of "in the way" this was supposed to avoid. The badge alone is
+     small enough to sit in the corner without covering anything; the
+     slots only appear as a dropdown once it's actually clicked. */
+  .tl-scratchpad{
+    position:fixed; top:14px; left:14px; z-index:500;
+  }
+  .tl-scratchpad-lastkey{
+    display:flex; flex-direction:column; align-items:center; gap:2px;
+    color:#0d1a19; text-align:center;
+    padding:10px 24px; border-radius:10px; background:var(--teal);
+    border:none; box-shadow:0 2px 10px rgba(0,0,0,.4);
+    white-space:nowrap; cursor:pointer; font-family:inherit;
+  }
+  .tl-scratchpad-lastkey:hover{filter:brightness(1.08);}
+  /* The key actually pressed is the thing worth reading at a glance;
+     which platform it opened is useful but secondary — sized and
+     weighted accordingly instead of both competing equally. */
+  .tl-lastkey-big{font-size:19px;font-weight:900;line-height:1.15;}
+  .tl-lastkey-small{font-size:9px;font-weight:700;opacity:.75;text-transform:uppercase;letter-spacing:.04em;line-height:1.4;}
+  .tl-scratchpad-dropdown{
+    margin-top:6px; background:var(--card); border:1px solid var(--hairline);
+    border-radius:10px; padding:8px; width:190px;
+    box-shadow:0 4px 14px rgba(0,0,0,.4);
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .tl-scratchpad-slot{display:flex; align-items:center; gap:4px;}
+  .tl-scratchpad-input{
+    flex:1; min-width:0; background:var(--bg); border:1px solid var(--hairline);
+    border-radius:6px; color:var(--text); font-size:11.5px; padding:4px 6px;
+  }
+  .tl-scratchpad-input:focus{border-color:var(--teal); outline:none;}
+  .tl-scratchpad-copy-btn{
+    flex:0 0 auto; width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+    background:transparent; border:1px solid var(--hairline); border-radius:6px; color:var(--muted);
+    cursor:pointer; padding:0;
+  }
+  .tl-scratchpad-copy-btn:hover{background:var(--card-hover); color:var(--text);}
+  .tl-scratchpad-copy-btn.copied{color:#0d1a19; background:var(--teal); border-color:var(--teal);}
+  .tl-scratchpad-copy-btn.copied .icon-copy{display:none;}
+  .tl-scratchpad-copy-btn.copied .icon-check{display:block;}
   .empty .ticket-icon{font-size:40px;margin-bottom:14px;}
   .empty h2{
     font-family:'Bebas Neue',sans-serif;font-size:30px;
@@ -1736,7 +1844,21 @@
     .select-check{width:26px;height:26px;}
     .insights-modal{max-width:520px;}
   }
+  /* No-login variant: nothing to log INTO or OUT OF, but Archived and
+     History are still real, useful views — the button stays, just
+     relabeled away from an identity (see updateAdminModeUI below), and
+     only the Log out item inside the menu is hidden. */
+  #accountMenuLogout{display:none !important;}
 </style>
+<!-- Supabase's realtime client (websocket-based live updates) — loaded
+     from a CDN since this is a single plain HTML file with no build
+     step. Everything else in this file still talks to Supabase via
+     plain fetch(); this is only used for the realtime subscription
+     itself, which isn't practical to hand-roll. If this CDN load ever
+     fails (offline, CDN down), the app still works fine via its
+     existing periodic poll — realtime is a speed upgrade on top of
+     that, not a replacement for it. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 </head>
 <body>
 
@@ -1756,8 +1878,8 @@
         <option value="upload">As uploaded</option>
         <option value="date" id="sortDateOption">By date</option>
         <option value="venue">By venue</option>
-        <option value="name" selected>By name</option>
-        <option value="shows">By tour size</option>
+        <option value="name">By name</option>
+        <option value="shows" selected>By tour size</option>
       </select>
       <button class="filter-btn" id="expandCollapseBtn" type="button" title="Toggle every section open or closed">⌃ Collapse</button>
       <div class="col-stepper" id="colStepper" title="Columns">
@@ -1782,7 +1904,7 @@
       <button class="btn ghost" id="releaseAllPresaleBtn" style="display:none;" title="Move every show on this sheet onto a regular sheet at once — codes, notes, and prices all come with them">↗ Release all shows</button>
     </div>
     <div class="account-menu-wrap login-btn-pinned">
-      <button class="btn ghost account-menu-trigger" id="adminModeBtn" title="Log in — pick your name and enter your passcode, or create a new account. Everyday edits (notes, star, pin, codes, prices) never require logging in; it's only for your own private sheets and a few admin-only actions.">👤 Log in</button>
+      <button class="btn ghost account-menu-trigger" id="adminModeBtn" title="Archived and History">☰</button>
       <div class="account-menu" id="accountMenu" style="display:none;">
         <button type="button" class="account-menu-item" id="accountMenuArchived">📦 Archived</button>
         <button type="button" class="account-menu-item" id="accountMenuHistory">📜 History</button>
@@ -1804,9 +1926,43 @@
       <p id="emptyBody">Upload a CSV to fill this sheet. Uploading again adds new events on top and refreshes matching ones — nothing gets duplicated, and your notes stay put. Use + above to start a separate sheet.</p>
       <div class="drop-zone" id="dropZone">Drag a CSV here, or use the menu above to upload</div>
     </div>
-    <div id="listRoot"></div>
+    <div id="listRoot">
+      <div class="loading-placeholder" id="loadingPlaceholder">Loading…</div>
+    </div>
   </div>
 </main>
+
+<!-- Small floating reminder of the last shortcut key pressed, plus 3
+     quick copy/paste slots tucked behind it — collapsed to just the
+     "Last:" badge by default so it can sit in a corner without actually
+     covering anything there; click it to drop the 3 slots down below.
+     See the JS block further down for what each piece does. -->
+<div class="tl-scratchpad" id="tlScratchpad">
+  <button type="button" class="tl-scratchpad-lastkey" id="tlLastKeyDisplay" title="Click to open 3 quick copy/paste slots">Last: —</button>
+  <div class="tl-scratchpad-dropdown" id="tlScratchpadDropdown" style="display:none;">
+    <div class="tl-scratchpad-slot">
+      <input type="text" class="tl-scratchpad-input" id="tlScratchSlot0" placeholder="Slot 1 — paste/type here" autocomplete="off">
+      <button type="button" class="tl-scratchpad-copy-btn" data-slot="0" title="Copy this slot">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-copy"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="icon-check" style="display:none;"><polyline points="20 6 9 17 4 12"/></svg>
+      </button>
+    </div>
+    <div class="tl-scratchpad-slot">
+      <input type="text" class="tl-scratchpad-input" id="tlScratchSlot1" placeholder="Slot 2 — paste/type here" autocomplete="off">
+      <button type="button" class="tl-scratchpad-copy-btn" data-slot="1" title="Copy this slot">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-copy"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="icon-check" style="display:none;"><polyline points="20 6 9 17 4 12"/></svg>
+      </button>
+    </div>
+    <div class="tl-scratchpad-slot">
+      <input type="text" class="tl-scratchpad-input" id="tlScratchSlot2" placeholder="Slot 3 — paste/type here" autocomplete="off">
+      <button type="button" class="tl-scratchpad-copy-btn" data-slot="2" title="Copy this slot">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-copy"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="icon-check" style="display:none;"><polyline points="20 6 9 17 4 12"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
 
 <div class="modal-overlay" id="addSheetModal" style="display:none;">
   <div class="modal-box">
@@ -2045,11 +2201,9 @@ const accountMenu = $('#accountMenu');
 const accountMenuArchived = $('#accountMenuArchived');
 const accountMenuLogout = $('#accountMenuLogout');
 function updateAdminModeUI(){
-  // No "— log out" in the button text anymore — clicking it while
-  // logged in opens the menu below rather than logging out directly, so
-  // the label shouldn't promise an action a single click no longer does.
-  adminModeBtn.textContent = currentUser ? `👤 ${currentUser}` : '👤 Log in';
-  adminModeBtn.classList.toggle('active', !!currentUser);
+  // No-login variant: no identity to show in the button — it's just
+  // the way into Archived/History now, not a login/account indicator.
+  adminModeBtn.textContent = '☰';
   archivePastBtn.style.display = adminModeOn ? 'block' : 'none';
   updateDeleteAllArchivedBtnVisibility();
   // Trash's tab only shows while admin mode is on — if it gets locked
@@ -2081,10 +2235,11 @@ function updateAdminModeUI(){
 // through the login/add-account flows.
 function sheetVisibleToCurrentUser(sheet){
   if(sheet.mode === 'trash' || sheet.mode === 'history' || sheet.mode === 'accounts' || sheet.mode === 'tournotes') return false;
-  if(sheet.mode === 'usopen') return true;
-  const privateMatch = sheet.name.match(/^(.+) — (.+)$/);
-  if(privateMatch) return currentUser === privateMatch[2];
-  return currentUserIsAdmin();
+  // No-login variant: one shared identity, so there's no "someone
+  // else's private sheet" concept left to hide — anyone with the link
+  // sees everything real (Trash/History/Accounts/tournotes above still
+  // never appear as tabs, same as the full version).
+  return true;
 }
 adminModeBtn.addEventListener('click', async () => {
   if(currentUser){
@@ -2137,12 +2292,8 @@ adminModeBtn.addEventListener('click', async () => {
 });
 accountMenuLogout.addEventListener('click', () => {
   accountMenu.style.display = 'none';
-  currentUser = null;
-  adminModeOn = false;
-  localStorage.removeItem('ticketWatchLoggedInAs');
-  updateAdminModeUI();
-  renderTabs();
-  render();
+  // No-op in this no-login version — everyone stays signed in as the
+  // one shared identity; there's no logged-out state to return to.
 });
 accountMenuArchived.addEventListener('click', () => {
   accountMenu.style.display = 'none';
@@ -2712,50 +2863,17 @@ function updateDeleteAllArchivedBtnVisibility(){
   deleteAllArchivedBtn.style.display = (archiveOnly && hasArchived && canDeleteFromSheet(activeSheet())) ? 'block' : 'none';
 }
 
-// ---------- Delete-sheet passcode re-check ----------
+// ---------- Delete-sheet confirmation ----------
 // Deleting a whole sheet is the single most destructive action in this
 // app — unlike every per-event delete, it doesn't go to History first;
-// the sheet and everything on it is just gone. Re-entering your own
-// passcode here is a deliberate speed bump against a stray click doing
-// that by accident, checked against the actual currently-logged-in
-// account's own passcode (never a fixed value baked into the code) so
-// it stays meaningful as accounts get added or changed.
-let deletePasscodeResolve = null;
-// Masked the same way the login passcode field is (see maskInputAsDots
-// and its comment further down) — plain type="text" with the real
-// value tracked separately in JS, not type="password", so this can't
-// end up triggering Chrome's own password-manager save prompt the way
-// the old login field once did.
-const deletePasscodeMask = maskInputAsDots(deletePasscodeInput);
+// the sheet and everything on it is just gone. The full version re-
+// checks a passcode here as a speed bump against a stray click; there's
+// no per-account passcode left to check in this no-login version, so a
+// plain confirm() is the speed bump instead — still something between
+// one click and permanent deletion, just not tied to an account.
 function requestDeletePasscode(message){
-  return new Promise(resolve => {
-    deletePasscodeResolve = resolve;
-    deletePasscodeMask.reset();
-    deletePasscodeError.style.display = 'none';
-    deletePasscodeLabel.textContent = message || 'Enter your passcode to delete';
-    deletePasscodeModal.style.display = 'flex';
-    deletePasscodeInput.focus();
-  });
+  return Promise.resolve(confirm((message || 'Delete this sheet?') + '\n\nThis cannot be undone.'));
 }
-function closeDeletePasscodeModal(result){
-  deletePasscodeModal.style.display = 'none';
-  if(deletePasscodeResolve){ deletePasscodeResolve(result); deletePasscodeResolve = null; }
-}
-function submitDeletePasscode(){
-  const person = PEOPLE.find(p => p.name === currentUser);
-  if(person && deletePasscodeMask.getValue() === person.passcode){
-    closeDeletePasscodeModal(true);
-  } else {
-    deletePasscodeError.style.display = 'block';
-    deletePasscodeMask.reset();
-    deletePasscodeInput.focus();
-  }
-}
-confirmDeletePasscodeBtn.addEventListener('click', submitDeletePasscode);
-cancelDeletePasscodeBtn.addEventListener('click', () => closeDeletePasscodeModal(false));
-deletePasscodeModal.addEventListener('click', e => { if(e.target === deletePasscodeModal) closeDeletePasscodeModal(false); });
-deletePasscodeInput.addEventListener('keydown', e => { if(e.key === 'Enter') submitDeletePasscode(); });
-
 let currentInsightsAnchorKey = null;
 function openInsightsModal(key){
   const insights = buildArtistInsights(key);
@@ -2873,10 +2991,16 @@ let openNotesKey = null; // eventKey of the one card whose notes panel is expand
 // US Open, an ownerless sheet) check against, via currentUserIsAdmin()
 // — never a specific name.
 let PEOPLE = [];
-let currentUser = null; // one of PEOPLE's names, or null if nobody's logged in
+// This is the no-login variant: there's exactly one shared identity for
+// anyone who opens the link, always signed in, never logged out. No
+// PEOPLE/passcode system to manage — every "logged in?" and "is this
+// person allowed to..." check throughout the app still works unchanged,
+// since they all key off currentUser/adminModeOn/currentUserIsAdmin(),
+// which are now simply always truthy instead of reflecting a real login
+// state.
+let currentUser = 'Sam';
 function currentUserIsAdmin(){
-  const person = PEOPLE.find(p => p.name === currentUser);
-  return !!(person && person.isAdmin);
+  return true;
 }
 const ACCOUNTS_SHEET_NAME = '🔑 Accounts';
 // A note on the whole tour/artist heading, not any one show — kept on
@@ -3137,7 +3261,7 @@ async function saveNewAccount(name, passcode, isAdmin){
   loadPeopleFromRemote();
   return true;
 }
-let adminModeOn = false;
+let adminModeOn = true; // always on in this no-login variant — see currentUser above
 let noteSnapshotOnOpen = null; // ann.note captured when the panel opened, so closing can tell if it actually changed
 let historyExpandedKeys = new Set(); // keys whose note-history list is currently expanded
 let archiveOnly = false; // filter: show only archived events instead of hiding them
@@ -3558,14 +3682,294 @@ document.addEventListener('click', e => {
 // web pages), so a background poll picks up anything edited directly in
 // the spreadsheet every ~20s, and immediately on regaining focus.
 // See Code.gs for the Apps Script backend.
-let syncUrl = null;
+// 20 seconds made sense when this WAS the only way another tab/device's
+// changes ever showed up. Now that realtime (see startRealtimeSync)
+// delivers those within about a second, this is purely a safety net for
+// the rare case a websocket silently drops — worth keeping, not worth
+// running this often anymore. Every open tab was also polling
+// independently on its own 20s timer regardless of whether anything
+// had actually changed, which added up across several duplicated tabs
+// (exactly the workflow this app is built around) into real background
+// load for no benefit realtime doesn't already cover.
+let syncUrl = null; // truthy once Supabase is configured below — same role it always had, just no longer literally used as a fetch target itself
 let syncTimer = null;
-const SYNC_POLL_MS = 20000;
+const SYNC_POLL_MS = 90000;
 
-// Baked in so the page works with zero setup — there's no visible sync
-// button anymore to manually connect/disconnect from, the app just
-// always talks to this sheet.
-const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbxjs98Uj7o2LzyQoWlKqdgEOJrxeE0PAm4_8U3vUII4aWraBmkkYgCjDMMKXoywwAt9/exec';
+// ---------- Supabase backend ----------
+// Swapped in to replace the Google Sheets/Apps Script backend — Apps
+// Script's cold-start + spreadsheet-read latency was the actual source
+// of "loading too slow," not anything in the app itself. Every
+// pull/push function below (loadAllFromRemote, pollRemote,
+// pushSheetEvents, pushSheetRename, pushSheetDelete, pushSheetOrder)
+// still expects back the exact same {events, sheets} shape it always
+// has — these functions just fulfill that contract against Supabase's
+// REST API instead, so nothing else in the app needed to change.
+const SUPABASE_URL = 'https://ajvjrndadwecntfcqjgb.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_65bPMoZ6rnQ4a2eXkp5ryg_oRcLri6K';
+const SUPABASE_HEADERS = {
+  'apikey': SUPABASE_KEY,
+  'Authorization': `Bearer ${SUPABASE_KEY}`,
+  'Content-Type': 'application/json'
+};
+
+// Every Supabase call goes through here — centralizes the one thing
+// plain fetch() doesn't do on its own: actually throwing when a
+// response comes back non-2xx (a bad API key, a table that doesn't
+// exist, an RLS policy blocking the request) instead of silently
+// "succeeding" with an error body that looks like real data.
+async function supabaseRequest(path, options = {}){
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers: { ...SUPABASE_HEADERS, ...(options.headers || {}) }
+  });
+  if(!res.ok){
+    const text = await res.text().catch(() => '');
+    throw new Error(`Supabase request failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+  // A real, live failure showed PostgREST returning a genuinely EMPTY
+  // body on a successful write with a 2xx status that ISN'T 204 (its
+  // default for some operations, without an explicit
+  // Prefer:return=representation asking for the row back) — calling
+  // res.json() on that throws its own confusing "Unexpected end of
+  // JSON input" error, which has nothing to do with the actual
+  // request having failed. Reading as text first and only parsing when
+  // there's actually something there sidesteps needing to know exactly
+  // which status code means "empty" for which operation.
+  const text = await res.text();
+  if(!text) return null;
+  try{
+    return JSON.parse(text);
+  }catch(e){
+    throw new Error(`Supabase returned unparseable JSON: ${text.slice(0, 200)}`);
+  }
+}
+
+// snake_case Supabase columns <-> the camelCase event shape the rest
+// of the app has always worked with.
+function supabaseRowToEvent(r){
+  return {
+    // Never shown anywhere, never sent back on a full-sheet replace —
+    // purely an internal handle so a single-field edit (a note, a
+    // rating) can target exactly this one database row directly
+    // instead of needing to rewrite the whole sheet just to change it.
+    _sbId: r.id,
+    appSheet: r.app_sheet,
+    sheetMode: r.sheet_mode,
+    name: r.name || '',
+    venue: r.venue || '',
+    dateStr: r.date_str || '',
+    primarySite: r.primary_site || '',
+    primaryLink: r.primary_link || '',
+    vividLink: r.vivid_link || '',
+    stubLink: r.stub_link || '',
+    note: r.note || '',
+    rating: r.rating || 0,
+    pinned: !!r.pinned,
+    sections: r.sections || [],
+    isNew: !!r.is_new,
+    updatedAt: r.updated_at || '',
+    archived: !!r.archived,
+    noteHistory: r.note_history || [],
+    presaleDateStr: r.presale_date_str || '',
+    code: r.code || '',
+    publicSaleDateStr: r.public_sale_date_str || '',
+    priceHistory: r.price_history || [],
+    extraLinks: r.extra_links || [],
+    deletedAt: r.deleted_at || '',
+    deletedFromSheet: r.deleted_from_sheet || ''
+  };
+}
+function eventToSupabaseRow(ev, sheetName, sheetMode){
+  return {
+    app_sheet: sheetName,
+    sheet_mode: sheetMode,
+    name: ev.name || '',
+    venue: ev.venue || '',
+    date_str: ev.dateStr || '',
+    primary_site: ev.primarySite || '',
+    primary_link: ev.primaryLink || '',
+    vivid_link: ev.vividLink || '',
+    stub_link: ev.stubLink || '',
+    note: ev.note || '',
+    rating: ev.rating || 0,
+    pinned: !!ev.pinned,
+    sections: ev.sections || [],
+    is_new: !!ev.isNew,
+    archived: !!ev.archived,
+    note_history: ev.noteHistory || [],
+    presale_date_str: ev.presaleDateStr || '',
+    code: ev.code || '',
+    public_sale_date_str: ev.publicSaleDateStr || '',
+    price_history: ev.priceHistory || [],
+    extra_links: ev.extraLinks || [],
+    deleted_at: ev.deletedAt || '',
+    deleted_from_sheet: ev.deletedFromSheet || ''
+  };
+}
+
+// The only real full reads — used for the initial load and the
+// periodic background poll. Every other operation below already knows
+// exactly what it just wrote, so it builds the {events, sheets} result
+// locally instead of re-fetching, which is what actually cuts down the
+// round-trips on every single note/price/star edit.
+async function supabaseFetchAll(){
+  const [sheetsRows, eventsRows] = await Promise.all([
+    supabaseRequest('sheets?select=*&order=sort_order.asc'),
+    supabaseRequest('events?select=*')
+  ]);
+  return {
+    sheets: sheetsRows.map(s => ({ name: s.name, mode: s.mode })),
+    events: eventsRows.map(supabaseRowToEvent)
+  };
+}
+
+// Updates exactly ONE event row directly, by its own database id —
+// used for the highest-frequency edit in the whole app (typing a note,
+// toggling a star, pinning a card) instead of the wholesale
+// delete-everything-then-reinsert-everything supabaseReplaceSheet still
+// does for genuine bulk operations (a CSV import, reordering). On a
+// sheet with hundreds of events, replacing the whole sheet just to
+// change one note field was real, measurable overkill once a real
+// database (capable of updating a single row directly) replaced Google
+// Sheets — this is the actual reason that switch was worth doing beyond
+// just raw speed per request.
+async function supabaseUpdateEventById(id, patch){
+  await supabaseRequest(`events?id=eq.${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+
+async function supabaseReplaceSheet(sheetName, sheetMode, payloadEvents){
+  // Always ensures the sheet's OWN row exists before touching its
+  // events — this used to be skipped as a speed optimization whenever
+  // the sheet looked "already known" locally, but that local tracking
+  // had more than one gap: more than one code path can add an entry to
+  // the local `sheets` array without it ever having actually reached
+  // the database (a brand-new sheet added the instant it's created, or
+  // a fallback "Sheet 1" created locally on a connection hiccup) — hit
+  // TWICE now by the exact same foreign-key failure as a direct
+  // result. Prefer:resolution=merge-duplicates makes this call a true
+  // upsert, so doing it unconditionally is safe regardless of which of
+  // those paths created the sheet, or whether it's tracked correctly —
+  // it never overwrites anything wrong on a sheet that already exists,
+  // since sort_order (the only thing that COULD clobber something real)
+  // is only ever included when this sheet isn't already known locally.
+  const isKnownLocally = sheets.some(s => s.name === sheetName);
+  const sheetRow = { name: sheetName, mode: sheetMode };
+  if(!isKnownLocally){
+    const maxRows = await supabaseRequest('sheets?select=sort_order&order=sort_order.desc&limit=1');
+    sheetRow.sort_order = (maxRows && maxRows.length ? maxRows[0].sort_order : -1) + 1;
+  }
+  await supabaseRequest('sheets', {
+    method: 'POST',
+    headers: { 'Prefer': 'resolution=merge-duplicates' },
+    body: JSON.stringify(sheetRow)
+  });
+  pendingEmptySheets = pendingEmptySheets.filter(p => p.name !== sheetName);
+
+  await supabaseRequest(`events?app_sheet=eq.${encodeURIComponent(sheetName)}`, { method: 'DELETE' });
+  if(payloadEvents.length){
+    await supabaseRequest('events', {
+      method: 'POST',
+      body: JSON.stringify(payloadEvents.map(ev => eventToSupabaseRow(ev, sheetName, sheetMode)))
+    });
+  }
+  const events = remoteCache.filter(e => e.appSheet !== sheetName)
+    .concat(payloadEvents.map(ev => ({ ...ev, appSheet: sheetName, sheetMode })));
+  const sheetsList = remoteSheetsList.some(s => s.name === sheetName)
+    ? remoteSheetsList
+    : remoteSheetsList.concat([{ name: sheetName, mode: sheetMode }]);
+  return { events, sheets: sheetsList };
+}
+
+async function supabaseDeleteSheet(name){
+  await supabaseRequest(`sheets?name=eq.${encodeURIComponent(name)}`, { method: 'DELETE' }); // cascades to that sheet's events
+  return {
+    events: remoteCache.filter(e => e.appSheet !== name),
+    sheets: remoteSheetsList.filter(s => s.name !== name)
+  };
+}
+
+async function supabaseRenameSheet(oldName, newName){
+  await supabaseRequest(`sheets?name=eq.${encodeURIComponent(oldName)}`, {
+    method: 'PATCH', body: JSON.stringify({ name: newName })
+  }); // ON UPDATE CASCADE carries every one of that sheet's events over to the new name automatically
+  return {
+    events: remoteCache.map(e => e.appSheet === oldName ? { ...e, appSheet: newName } : e),
+    sheets: remoteSheetsList.map(s => s.name === oldName ? { ...s, name: newName } : s)
+  };
+}
+
+async function supabaseReorderSheets(order){
+  await Promise.all(order.map((name, idx) =>
+    supabaseRequest(`sheets?name=eq.${encodeURIComponent(name)}`, { method: 'PATCH', body: JSON.stringify({ sort_order: idx }) })
+  ));
+  const byName = {};
+  remoteSheetsList.forEach(s => { byName[s.name] = s; });
+  return { events: remoteCache, sheets: order.filter(name => byName[name]).map(name => byName[name]) };
+}
+
+// ---------- Realtime sync ----------
+// The 20-second poll below (startSyncPolling) still runs as a safety
+// net — a websocket can silently drop on a flaky connection or a
+// backgrounded tab without any obvious error, so falling back to
+// "eventually consistent within 20 seconds" if realtime ever hiccups
+// is worth keeping rather than replacing outright. This is a SPEED
+// upgrade on top of that: any change to either table, from ANY tab or
+// device, arrives here within roughly a second, instead of waiting on
+// the next poll tick.
+//
+// Reacts to a change by just re-running the exact same pollRemote()
+// the periodic poll already uses — reusing its existing merge/render
+// logic (respecting an open notes panel, an in-flight push, etc.)
+// rather than hand-writing new incremental patch logic for every
+// possible insert/update/delete shape. A single save can touch many
+// rows at once (a whole sheet's worth of events), which would
+// otherwise fire this many times in a burst — debounced so a burst of
+// related changes triggers one refresh, not a dozen.
+let realtimeRefreshTimer = null;
+function scheduleRealtimeRefresh(){
+  clearTimeout(realtimeRefreshTimer);
+  realtimeRefreshTimer = setTimeout(() => { pollRemote(); }, 400);
+}
+// Set inside startRealtimeSync once the channel actually exists — read
+// by tlUpdateLastKeyIndicator further down to send broadcast messages
+// on the same connection.
+let tlRealtimeChannel = null;
+function startRealtimeSync(){
+  if(typeof window.supabase === 'undefined' || typeof window.supabase.createClient !== 'function'){
+    console.warn('[Ticket Library] Supabase realtime client did not load — falling back to periodic polling only.');
+    return;
+  }
+  try{
+    const rt = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // Stored so tlUpdateLastKeyIndicator (a different function, called
+    // from wherever a shortcut fires) can send on it directly — see
+    // the broadcast send/receive pair below.
+    tlRealtimeChannel = rt.channel('ticket-library-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, scheduleRealtimeRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sheets' }, scheduleRealtimeRefresh)
+      // Broadcast, not postgres_changes, for the "last key pressed"
+      // badge specifically — a genuine live report said the
+      // postgres_changes version wasn't updating another browser live
+      // even after confirming both sides had the current code. Rather
+      // than keep guessing at what might be misconfigured on that
+      // path (RLS, the publication, replica identity), broadcast is a
+      // simpler, more direct client-to-client message that doesn't
+      // depend on any of those — it skips the database layer for the
+      // live update entirely. The app_state TABLE write right below
+      // this still happens too, purely so a freshly opened tab has
+      // something real to read on load (see tlLoadInitialLastKey) —
+      // broadcast messages aren't stored anywhere, so they can't help
+      // with that part.
+      .on('broadcast', { event: 'last_key_update' }, msg => {
+        if(msg && msg.payload && typeof msg.payload.value === 'string'){
+          tlRenderLastKeyBadge(msg.payload.value);
+        }
+      })
+      .subscribe();
+  }catch(err){
+    console.warn('[Ticket Library] Realtime subscription failed to start — falling back to periodic polling only.', err);
+  }
+}
 
 // No visible status text anymore (the sync popover it used to live in
 // is gone), but this is still called from everywhere a sync
@@ -3701,12 +4105,20 @@ function syncActiveSheetFromCache(){
   const built = buildEventsAndAnnotations(rows);
   allEvents = built.events;
   annotations = built.annotationsMap;
-  metaLine.textContent = allEvents.length ? `${allEvents.length} events · live from Google Sheets` : '';
+  metaLine.textContent = allEvents.length ? `${allEvents.length} events · live from Supabase` : '';
 }
 
-// Full initial load: fetch everything, rebuild the sheet list, show the
-// first one. Falls back to one empty local-only sheet if there's no
-// connection, since there's nothing else to show.
+// Progressive initial load: the sheets LIST is small and fast
+// regardless of how much event data exists, so fetching it alone
+// first is enough to know which sheet is about to open. Only THAT one
+// sheet's events get fetched next — a small, targeted query — so the
+// sheet actually being looked at (especially via a duplicated tab
+// landing on ?sheet=...) renders almost instantly instead of waiting
+// on every sheet's full event history first. Everything else still
+// loads right behind it, in the background, for switching sheets and
+// cross-sheet search — see loadRemainingEventsInBackground below.
+// Falls back to one empty local-only sheet if there's no connection,
+// since there's nothing else to show.
 async function loadAllFromRemote(){
   if(!syncUrl){
     sheets = [{ name: 'Sheet 1', mode: 'standard' }];
@@ -3718,12 +4130,27 @@ async function loadAllFromRemote(){
     return;
   }
   setSyncStatus('Loading…');
-  let data;
+  // If the link already names a specific sheet (?sheet=...), there's no
+  // need to wait for the sheets list before starting that sheet's
+  // events fetch too — both can fire at once instead of one after the
+  // other. On a connection where each request already carries some
+  // baseline latency (a real, noticeable factor on Supabase's free
+  // tier especially, which can take a moment to respond to the first
+  // request after a quiet stretch), firing them together roughly halves
+  // that wait instead of paying for it twice in a row.
+  const urlSheetHint = getSheetNameFromUrl();
+  let sheetsRows, parallelFirstRows = null;
   try{
-    const res = await fetch(syncUrl, { method: 'GET' });
-    data = await res.json();
+    if(urlSheetHint){
+      [sheetsRows, parallelFirstRows] = await Promise.all([
+        supabaseRequest('sheets?select=*&order=sort_order.asc'),
+        supabaseRequest(`events?app_sheet=eq.${encodeURIComponent(urlSheetHint)}&select=*`)
+      ]);
+    } else {
+      sheetsRows = await supabaseRequest('sheets?select=*&order=sort_order.asc');
+    }
   }catch(err){
-    setSyncStatus('Could not reach the Google Sheet — check the URL and connection.', 'error');
+    setSyncStatus('Could not reach Supabase — check the connection.', 'error');
     sheets = [{ name: 'Sheet 1', mode: 'standard' }];
     activeSheetName = 'Sheet 1';
     sortMode = defaultSortModeForMode('standard'); sortSelect.value = sortMode;
@@ -3731,17 +4158,34 @@ async function loadAllFromRemote(){
     renderTabs(); updateModeUI(); render();
     return;
   }
-  if(!data || !Array.isArray(data.events)){
-    setSyncStatus('Unexpected response from the sheet.', 'error');
-    return;
-  }
-  remoteCache = data.events;
-  remoteSheetsList = Array.isArray(data.sheets) ? data.sheets : [];
+  remoteSheetsList = Array.isArray(sheetsRows) ? sheetsRows.map(s => ({ name: s.name, mode: s.mode })) : [];
   loadPeopleFromRemote();
   loadTourNotesFromRemote();
   rebuildSheetsFromCache();
-  await migrateTrashIntoHistory();
   activeSheetName = pickDefaultSheetName();
+  // A shared link naming a specific sheet (?sheet=...) wins over
+  // whichever tab happens to sit leftmost — that's what lets opening
+  // the same link in a second tab land on the same sheet someone was
+  // just looking at, not just wherever tab order defaults to.
+  if(urlSheetHint && sheets.some(s => s.name === urlSheetHint)) activeSheetName = urlSheetHint;
+  // Same idea as the sheet/search restore above, for whichever tour
+  // heading was clicked to "select" it for the number-key shortcuts —
+  // carried in the link so a duplicated tab is immediately ready to use
+  // them without needing to click (or hover) anything first.
+  const urlGroup = getGroupKeyFromUrl();
+  if(urlGroup) tlSelectedGroupKey = urlGroup;
+
+  try{
+    // The parallel fetch above already covers this exact case — only
+    // fire a fresh one if that didn't happen (no ?sheet= hint at all)
+    // or it turned out not to actually match a real sheet.
+    const firstRows = (urlSheetHint && activeSheetName === urlSheetHint && parallelFirstRows)
+      ? parallelFirstRows
+      : (activeSheetName ? await supabaseRequest(`events?app_sheet=eq.${encodeURIComponent(activeSheetName)}&select=*`) : []);
+    remoteCache = firstRows.map(supabaseRowToEvent);
+  }catch(err){
+    remoteCache = []; // the background fetch below fills this in if it succeeds
+  }
   {
     const sheet = activeSheet();
     sortMode = (sheet && sheet.sortMode) || defaultSortModeForMode(sheet ? sheet.mode : 'standard');
@@ -3756,7 +4200,53 @@ async function loadAllFromRemote(){
   }
   render();
   setSyncStatus(`Synced ${new Date().toLocaleTimeString()}`, 'ok');
+  loadRemainingEventsInBackground();
 }
+
+// The rest of the sheets' events, fetched right after the visible one
+// already rendered — doesn't block anything on screen. Also where the
+// legacy Trash-sheet migration runs now (it genuinely needs every
+// sheet's data, not just the one that just loaded), which is why it
+// moved out of the fast path above.
+async function loadRemainingEventsInBackground(){
+  let rows;
+  try{
+    rows = await supabaseRequest('events?select=*');
+  }catch(err){
+    return; // the visible sheet is unaffected — the next poll/realtime tick retries this anyway
+  }
+  // A real, live bug: this ran right after the fast-path load had
+  // already successfully shown real data, and an occasional empty-but-
+  // technically-successful response from here silently wiped it back
+  // out to nothing a few seconds later — exactly what "it was there,
+  // then it disappeared" looked like from the outside. Far more likely
+  // a transient hiccup than every event on the sheet having genuinely
+  // vanished in the same instant this happened to run, so this refuses
+  // to act on it and just lets the next poll/realtime tick confirm
+  // (or not) instead.
+  if(remoteCache.length > 0 && rows.length === 0){
+    console.warn('[Ticket Library] background fetch returned 0 events when', remoteCache.length, 'were already loaded — treating as a transient hiccup, not overwriting.');
+    return;
+  }
+  remoteCache = rows.map(supabaseRowToEvent);
+  await migrateTrashIntoHistory();
+  rebuildSheetsFromCache();
+  if(!sheets.some(s => s.name === activeSheetName)) activeSheetName = pickDefaultSheetName();
+  syncActiveSheetFromCache();
+  renderTabs();
+  updateModeUI();
+  // A real, live bug: the very first render (the fast-path one, with
+  // only the active sheet's own data) already used up the ONE scroll
+  // attempt a URL-selected group gets — but that render can still land
+  // right as OTHER things about the page are settling, and once used,
+  // the scroll never got a second chance to correct itself even after
+  // everything had fully finished loading. Resetting it right here
+  // gives this render — the one where loading is genuinely complete —
+  // one more chance to land in the right spot if the first one didn't.
+  if(tlSelectedGroupKey) tlScrolledToSelectedGroup = false;
+  render();
+}
+
 
 // Tracks how many pushes are currently in flight. A background poll that
 // lands WHILE a push is still writing the Sheet (uploads especially can
@@ -3777,14 +4267,30 @@ async function pollRemote(){
   if(!syncUrl || pendingPushCount > 0) return;
   let data;
   try{
-    const res = await fetch(syncUrl, { method: 'GET' });
-    data = await res.json();
+    data = await supabaseFetchAll();
   }catch(err){
     setSyncStatus('Sync check failed — will retry.', 'error');
     return;
   }
   if(!data || !Array.isArray(data.events)) return;
   if(pendingPushCount > 0) return; // a push started while this fetch was in flight
+  // A poll coming back with drastically less data than already loaded
+  // is far more likely a transient hiccup (a brief connection issue,
+  // an occasional empty-but-technically-successful response from the
+  // free tier) than a legitimate "everything really did just get
+  // deleted" — a real, live bug showed exactly this: a sheet full of
+  // real data, uploaded and confirmed working, silently wiped out by a
+  // poll that happened to come back empty. Refusing to act on an
+  // implausible full wipe doesn't block a genuine one from ever taking
+  // effect — it just waits for the NEXT poll (or the realtime event
+  // the actual change would itself trigger) to confirm it first,
+  // rather than trusting a single response that contradicts everything
+  // already on screen.
+  if(remoteCache.length > 0 && data.events.length === 0){
+    console.warn('[Ticket Library] poll returned 0 events when', remoteCache.length, 'were expected — treating as a transient hiccup, not overwriting.');
+    setSyncStatus('Sync check looked wrong — will retry.', 'error');
+    return;
+  }
   remoteCache = data.events;
   remoteSheetsList = Array.isArray(data.sheets) ? data.sheets : [];
 
@@ -3806,6 +4312,13 @@ async function pollRemote(){
 // Pushes the currently-loaded sheet's events (with notes/rating/pin/prices
 // merged in) to the Sheet. The response is the full authoritative dataset,
 // so remoteCache is refreshed from it directly — no separate local write.
+// The actual error text from the most recent failed push — nothing
+// visible in this app ever showed real error detail before (see
+// setSyncStatus's own comment), which made a real, live save failure
+// impossible to diagnose from a bug report alone. Read by
+// handleCsvUpload's alert so a failure comes with the real reason
+// attached instead of a generic "didn't save."
+let lastPushError = null;
 async function pushSheetEvents(sheetName, mode, payloadEvents){
   if(!syncUrl){
     setSyncStatus('Not connected — this change was not saved.', 'error');
@@ -3813,17 +4326,15 @@ async function pushSheetEvents(sheetName, mode, payloadEvents){
   }
   pendingPushCount++;
   try{
-    const res = await fetch(syncUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight Apps Script can't answer
-      body: JSON.stringify({ action: 'replaceSheet', appSheet: sheetName, sheetMode: mode, events: payloadEvents })
-    });
-    const data = await res.json();
+    const data = await supabaseReplaceSheet(sheetName, mode, payloadEvents);
     if(data && Array.isArray(data.events)) remoteCache = data.events;
     if(data && Array.isArray(data.sheets)) remoteSheetsList = data.sheets;
     setSyncStatus(`Synced ${new Date().toLocaleTimeString()}`, 'ok');
+    lastPushError = null;
     return true;
   }catch(err){
+    console.error('[Ticket Library] save failed:', err);
+    lastPushError = (err && err.message) ? err.message : String(err);
     setSyncStatus('Save failed — check your connection and try again.', 'error');
     return false;
   }finally{
@@ -3833,13 +4344,13 @@ async function pushSheetEvents(sheetName, mode, payloadEvents){
 
 async function pushActiveSheetToRemote(){
   const name = activeSheetName;
-  if(!name) return;
+  if(!name) return false;
   const mode = activeSheetMode();
   const payloadEvents = allEvents.map(ev => {
     const ann = getAnnotation(eventKey(ev));
     return { ...ev, note: ann.note || '', rating: ann.rating || 0, pinned: !!ann.pinned, sections: ann.sections || [], isNew: !!ann.isNew, archived: !!ann.archived, noteHistory: ann.noteHistory || [], priceHistory: ann.priceHistory || [], extraLinks: ann.extraLinks || [] };
   });
-  await pushSheetEvents(name, mode, payloadEvents);
+  return await pushSheetEvents(name, mode, payloadEvents);
 }
 
 // Saves an edit made to a cross-sheet search result back to the sheet it
@@ -3865,12 +4376,7 @@ async function pushSheetRename(oldName, newName){
   if(!syncUrl) return;
   pendingPushCount++;
   try{
-    const res = await fetch(syncUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'renameSheet', oldName, newName })
-    });
-    const data = await res.json();
+    const data = await supabaseRenameSheet(oldName, newName);
     if(data && Array.isArray(data.events)) remoteCache = data.events;
     if(data && Array.isArray(data.sheets)) remoteSheetsList = data.sheets;
   }catch(e){ setSyncStatus('Rename may not have saved — check your connection.', 'error'); }
@@ -3881,12 +4387,7 @@ async function pushSheetDelete(name){
   if(!syncUrl) return;
   pendingPushCount++;
   try{
-    const res = await fetch(syncUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'deleteSheet', appSheet: name })
-    });
-    const data = await res.json();
+    const data = await supabaseDeleteSheet(name);
     if(data && Array.isArray(data.events)) remoteCache = data.events;
     if(data && Array.isArray(data.sheets)) remoteSheetsList = data.sheets;
   }catch(e){ setSyncStatus('Delete may not have saved — check your connection.', 'error'); }
@@ -3899,12 +4400,7 @@ async function pushSheetOrder(){
   if(!syncUrl) return;
   pendingPushCount++;
   try{
-    const res = await fetch(syncUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'reorderSheets', order: sheets.map(s => s.name) })
-    });
-    const data = await res.json();
+    const data = await supabaseReorderSheets(sheets.map(s => s.name));
     if(data && Array.isArray(data.events)) remoteCache = data.events;
     if(data && Array.isArray(data.sheets)) remoteSheetsList = data.sheets;
   }catch(e){ setSyncStatus('Reorder may not have saved — check your connection.', 'error'); }
@@ -4341,11 +4837,25 @@ function recordsFromCSV(text){
 
 // Identifies "the same event" for note-keeping purposes, stable across
 // re-uploads as long as the ticket link or name/venue/date stay the same.
+//
+// The presale code is folded in here too, when there is one — a real
+// presale tracker CSV can legitimately list the exact same Ticketmaster
+// event more than once under different codes (a members-only window, a
+// specific bank's card presale, a later public one — this exact pattern
+// showed up for real: the same Atlanta Braves game listed twice, once
+// under an "INSIDER2026" code and once under "public"). Keying purely
+// off the link collapsed those into one during import, silently
+// discarding whichever code happened to be uploaded first — a real,
+// confirmed data-loss bug, not a hypothetical one. Events without a
+// code (the overwhelming majority of the app's regular, non-presale
+// use) are completely unaffected — this only adds a distinguishing
+// suffix when a code specifically exists.
 function eventKey(ev){
+  const codeSuffix = ev.code && ev.code.trim() ? '|code:' + ev.code.trim().toLowerCase() : '';
   if(ev.primaryLink && ev.primaryLink.trim()){
-    return 'pl:' + ev.primaryLink.trim().toLowerCase();
+    return 'pl:' + ev.primaryLink.trim().toLowerCase() + codeSuffix;
   }
-  return 'nv:' + [ev.name, ev.venue, ev.dateStr].join('|').trim().toLowerCase();
+  return 'nv:' + [ev.name, ev.venue, ev.dateStr].join('|').trim().toLowerCase() + codeSuffix;
 }
 
 // Searches artist/event name, venue, all three ticket links, the primary
@@ -4615,9 +5125,9 @@ async function deleteHistoricalPriceHistoryEntry(key, index){
 
 async function saveEventsToActiveSheet(events){
   allEvents = events;
-  metaLine.textContent = `${events.length} events · live from Google Sheets`;
+  metaLine.textContent = `${events.length} events · live from Supabase`;
   render();
-  await pushActiveSheetToRemote();
+  return await pushActiveSheetToRemote();
 }
 
 // Every upload adds to whatever's on the active sheet — matching events
@@ -4676,7 +5186,18 @@ async function handleCsvUpload(file, text){
     const key = eventKey(ev);
     getAnnotation(key).isNew = !existingKeys.has(key);
   });
-  await saveEventsToActiveSheet(merged);
+  const saved = await saveEventsToActiveSheet(merged);
+  // A failed save here used to be entirely silent — no visible status
+  // text exists anywhere in this app anymore (see setSyncStatus's own
+  // comment), so a save that failed for ANY reason (a bad connection,
+  // a real bug) looked identical to one that succeeded until it quietly
+  // reverted on the next sync. For a deliberate, significant action
+  // like importing a whole CSV, that's worth a real, impossible-to-miss
+  // warning rather than staying consistent with how quieter routine
+  // edits (a single note, a star) are handled.
+  if(!saved){
+    alert(`This import did NOT save — it may look like it worked right now, but it will disappear the next time this syncs.\n\nError detail: ${lastPushError || 'unknown'}\n\nCheck your connection and try uploading the CSV again. If it keeps happening, send that error detail along to get it fixed properly.`);
+  }
 }
 
 // Delete permissions, by sheet type: your own private sheet is fully
@@ -4911,13 +5432,62 @@ async function deleteAllArchivedEvents(){
 }
 
 let saveNotesTimer = null;
-function saveNotesSoon(){
+// A specific, unambiguous event key to target with a fast single-row
+// update instead of the full-sheet replace below — only ever set by the
+// ONE call site that can name its exact target with total confidence
+// (the notes textarea itself, via its own data-key). Every OTHER
+// trigger for this save (pin, rating, price history, bulk actions, ...)
+// still just calls saveNotesSoon() with no key, same as always, which
+// intentionally invalidates any pending targeted key and falls back to
+// the proven full-sheet push — safer to fall back on any ambiguity than
+// to guess at which single row actually changed.
+let pendingTargetedSaveKey = null;
+function saveNotesSoon(targetKey){
   clearTimeout(saveNotesTimer);
+  pendingTargetedSaveKey = targetKey || null;
   saveNotesTimer = setTimeout(saveNotesNow, 500);
 }
 async function saveNotesNow(){
   clearTimeout(saveNotesTimer);
-  await pushActiveSheetToRemote();
+  const targetKey = pendingTargetedSaveKey;
+  pendingTargetedSaveKey = null;
+  let handledViaTargetedUpdate = false;
+  if(targetKey){
+    // Only takes the fast path when this exact event is both on the
+    // active sheet (searchAnnotationsMap-only cross-sheet edits already
+    // go through dirtySheets/pushCrossSheetEventEdit below, untouched)
+    // and already has a real database id (a brand-new, not-yet-synced
+    // event doesn't yet, and correctly falls through to the full push,
+    // which is also what actually creates it).
+    const matched = remoteCache.find(e => eventKey(e) === targetKey && e._sbId);
+    if(matched){
+      const ann = getAnnotation(targetKey);
+      const patch = {
+        note: ann.note || '', rating: ann.rating || 0, pinned: !!ann.pinned,
+        sections: ann.sections || [], is_new: !!ann.isNew, archived: !!ann.archived,
+        note_history: ann.noteHistory || [], price_history: ann.priceHistory || [],
+        extra_links: ann.extraLinks || []
+      };
+      try{
+        await supabaseUpdateEventById(matched._sbId, patch);
+        Object.assign(matched, {
+          note: patch.note, rating: patch.rating, pinned: patch.pinned, sections: patch.sections,
+          isNew: patch.is_new, archived: patch.archived, noteHistory: patch.note_history,
+          priceHistory: patch.price_history, extraLinks: patch.extra_links
+        });
+        setSyncStatus(`Synced ${new Date().toLocaleTimeString()}`, 'ok');
+        lastPushError = null;
+        handledViaTargetedUpdate = true;
+      }catch(err){
+        console.error('[Ticket Library] targeted note save failed, falling back to a full sheet save:', err);
+        lastPushError = (err && err.message) ? err.message : String(err);
+        // Falls through to the full push below — same as any other save failure would.
+      }
+    }
+  }
+  if(!handledViaTargetedUpdate){
+    await pushActiveSheetToRemote();
+  }
   if(dirtySheets.size){
     const toPush = Array.from(dirtySheets);
     dirtySheets.clear();
@@ -5050,6 +5620,266 @@ document.addEventListener('keydown', e => {
   if(e.key === 'ArrowLeft'){ e.preventDefault(); selectByDirection('left'); return; }
 });
 
+// ---------- Number key: open one specific date's ticket link ----------
+// Click anywhere on a tour's own heading bar to toggle it in/out of
+// "shortcut mode" — this is saved right into the address bar
+// (?group=...), so duplicating the tab (or sending the link to open in
+// a second tab) carries the selection with it. That's the whole point:
+// toggle a tour on once, duplicate the tab as many times as needed, and
+// the shortcuts immediately target that same tour's dates in each one —
+// no re-clicking in every new tab. Collapsing/expanding and copying the
+// tour's name are both fully separate actions now (their own controls
+// on the heading) — toggling shortcut mode never touches either.
+//
+// An explicit selection, once toggled on, is the SOLE authority for
+// which group the keys apply to — it used to lose to whatever the
+// mouse happened to be resting over at the moment, which produced
+// exactly the "doesn't always open what I expect" unpredictability
+// that's worse than not having a hover shortcut at all. Hover still
+// works as a quick, no-setup fallback, but ONLY when nothing has been
+// explicitly toggled on — it can never silently override a real
+// selection anymore.
+//
+// Plain key = Ticketmaster. Held Alt + the same key = VividSeats for
+// that identical card instead — same position, same badge, just the
+// other platform.
+//
+// Covers up to 38 cards per group — the number row first (1234567890-=,
+// left to right same as the physical keys), then continuing down the
+// next three keyboard rows (qwertyuiop, asdfghjkl, zxcvbnm) for any
+// group bigger than that. Ordered by physical row/position specifically
+// so it stays learnable/guessable rather than an arbitrary key list —
+// and matches the on-card badges below, which show exactly which key
+// opens which card either way.
+const TL_OPEN_NTH_KEY_ORDER = [
+  '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=',
+  'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p',
+  'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l',
+  'z', 'x', 'c', 'v', 'b', 'n', 'm'
+];
+let tlHoveredCardGrid = null;
+let tlSelectedGroupKey = null;
+document.addEventListener('mouseover', e => {
+  tlHoveredCardGrid = e.target.closest('.day-grid');
+});
+function tlFindGridForGroupKey(key){
+  if(!key) return null;
+  const heading = listRoot.querySelector(`.day-heading[data-section="${CSS.escape(key)}"]`);
+  return heading ? heading.nextElementSibling : null;
+}
+// The heading's own highlight is baked directly into dayHeadingHtml's
+// own output (via isShortcutSelected) — this handles the two things
+// that genuinely need a pass over the live DOM after a render instead:
+// the one-time scroll for a selection restored from a shared link
+// (?group=...), and the small key-badge on each card in that group
+// showing exactly which key opens it. Both only apply to the explicitly
+// selected group, not a transient hover — badges constantly appearing
+// and disappearing as the mouse merely passes over different sections
+// would be more distracting than useful, and the selected group is the
+// one that's actually "in that mode" in any lasting sense (it's the one
+// that survives into a duplicated tab).
+let tlScrolledToSelectedGroup = false;
+function tlMarkSelectedGroupInDom(){
+  document.querySelectorAll('.tl-shortcut-badge').forEach(el => el.remove());
+  if(!tlSelectedGroupKey) return;
+  const heading = listRoot.querySelector(`.day-heading[data-section="${CSS.escape(tlSelectedGroupKey)}"]`);
+  if(!heading) return;
+  if(!tlScrolledToSelectedGroup){
+    tlScrolledToSelectedGroup = true;
+    // 'start' rather than 'center' — centering the heading itself left
+    // whatever tour came right before it filling the top half of the
+    // screen, which is exactly the "landing in the wrong spot" a real
+    // screenshot showed. Landing at the top means the selected tour's
+    // OWN cards get the room instead.
+    heading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  const grid = heading.nextElementSibling;
+  if(!grid) return;
+  const cards = Array.from(grid.children).filter(el => el.classList.contains('ticket'));
+  cards.forEach((card, idx) => {
+    const keyLabel = TL_OPEN_NTH_KEY_ORDER[idx];
+    if(!keyLabel) return; // past the 38 this covers — no badge, but every other card's still numbered correctly
+    const badge = document.createElement('div');
+    badge.className = 'tl-shortcut-badge';
+    badge.textContent = keyLabel;
+    badge.title = `Press "${keyLabel}" for Ticketmaster — hold Alt for VividSeats instead`;
+    card.appendChild(badge);
+  });
+}
+// Small, non-blocking reminder of the last key actually pressed (see
+// the floating scratchpad panel) — for exactly the moment you've
+// already alt-tabbed away to a new tab and can't remember which number
+// you just hit in the last one.
+// Synced two ways, layered on top of each other:
+//  - localStorage + its 'storage' event: instant, and works even if
+//    Supabase is briefly unreachable, but only ever reaches OTHER TABS
+//    IN THIS SAME BROWSER — a real screenshot confirmed a second,
+//    completely different browser never saw it at all, which is
+//    exactly the gap this can't close on its own.
+//  - A one-row Supabase table (app_state), pushed on every update and
+//    picked up via the same realtime channel already used for
+//    events/sheets (see startRealtimeSync) — this is what actually
+//    reaches a different browser or device, the same way a note or a
+//    star already does.
+// The synced/stored value itself stays a single plain string (e.g.
+// "3 → Ticketmaster") — only how it's DRAWN into the badge changed, so
+// none of the syncing above needed to change shape along with it.
+const TL_LAST_KEY_STORAGE = 'tlLastKeyGlobal';
+// The key itself (what was actually pressed) is all that's shown now —
+// which platform it opened (Ticketmaster vs VividSeats) turned out not
+// to be worth the label at all, not even as smaller secondary text.
+// The synced/stored value stays the full "3 → Ticketmaster" string
+// though (see tlUpdateLastKeyIndicator below) — only the DISPLAY was
+// simplified, so nothing about the syncing itself needed to change.
+function tlRenderLastKeyBadge(text){
+  const el = document.getElementById('tlLastKeyDisplay');
+  if(!el) return;
+  const key = String(text || '').split(' → ')[0];
+  el.innerHTML = `<span class="tl-lastkey-big">${escapeHtml(key)}</span>`;
+}
+function tlUpdateLastKeyIndicator(text){
+  tlRenderLastKeyBadge(text);
+  try{ localStorage.setItem(TL_LAST_KEY_STORAGE, text); }catch(e){}
+  if(syncUrl){
+    // Stored so a freshly opened tab/browser has something real to
+    // read on load (see tlLoadInitialLastKey) — this alone was the
+    // path that only reliably worked after that tab's own next reload.
+    supabaseRequest('app_state?key=eq.last_shortcut', {
+      method: 'PATCH',
+      body: JSON.stringify({ value: text })
+    }).catch(() => { /* not fatal — the badge already updated locally; this only affects what a FUTURE fresh load would see */ });
+    // The actual live update to every ALREADY-OPEN tab/browser — sent
+    // directly over the realtime connection, not through the database.
+    if(tlRealtimeChannel){
+      tlRealtimeChannel.send({ type: 'broadcast', event: 'last_key_update', payload: { value: text } }).catch(() => {});
+    }
+  }
+}
+window.addEventListener('storage', e => {
+  if(e.key !== TL_LAST_KEY_STORAGE || e.newValue === null) return;
+  tlRenderLastKeyBadge(e.newValue);
+});
+// Picks up whatever's already there on load, checking Supabase FIRST
+// (the one place a different browser/device's update would actually
+// show up) and falling back to this browser's own localStorage only if
+// that fails — otherwise a freshly opened tab/browser starts back at
+// "Last: —" even though the real answer already exists somewhere.
+// Called from initApp() itself (not run immediately here) since it
+// needs syncUrl already set, which doesn't happen until initApp() runs
+// — this function is only DEFINED at this point in the file, not
+// invoked yet.
+async function tlLoadInitialLastKey(){
+  if(syncUrl){
+    try{
+      const rows = await supabaseRequest('app_state?key=eq.last_shortcut&select=value');
+      if(rows && rows.length && rows[0].value){
+        tlRenderLastKeyBadge(rows[0].value);
+        return;
+      }
+    }catch(e){ /* falls through to the localStorage check below */ }
+  }
+  try{
+    const existing = localStorage.getItem(TL_LAST_KEY_STORAGE);
+    if(existing) tlRenderLastKeyBadge(existing);
+  }catch(e){}
+}
+// Three small copy/paste slots living in the same floating widget —
+// restored from (and saved to) localStorage so they survive a refresh.
+// Deliberately per-browser/local-only, never synced to Supabase: this
+// is a personal scratch space, not part of the show data itself.
+// Hidden behind the "Last:" badge by default (see tl-scratchpad-dropdown
+// in the CSS/HTML) — click the badge to drop them down, click anywhere
+// else to close it back up again.
+(function(){
+  const SLOT_COUNT = 3;
+  const STORAGE_PREFIX = 'tlScratchpadSlot_';
+  for(let i = 0; i < SLOT_COUNT; i++){
+    const input = document.getElementById(`tlScratchSlot${i}`);
+    if(!input) continue;
+    try{ input.value = localStorage.getItem(STORAGE_PREFIX + i) || ''; }catch(e){ /* private browsing or similar — slots just won't persist this session */ }
+    input.addEventListener('input', () => {
+      try{ localStorage.setItem(STORAGE_PREFIX + i, input.value); }catch(e){}
+    });
+  }
+  document.querySelectorAll('.tl-scratchpad-copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const input = document.getElementById(`tlScratchSlot${btn.dataset.slot}`);
+      if(!input || !input.value) return;
+      const ok = await copyToClipboard(input.value);
+      if(!ok) return;
+      btn.classList.add('copied');
+      clearTimeout(btn._copyTimeout);
+      btn._copyTimeout = setTimeout(() => btn.classList.remove('copied'), 1200);
+    });
+  });
+  const badge = document.getElementById('tlLastKeyDisplay');
+  const dropdown = document.getElementById('tlScratchpadDropdown');
+  if(badge && dropdown){
+    badge.addEventListener('click', e => {
+      e.stopPropagation();
+      dropdown.style.display = dropdown.style.display === 'none' ? 'flex' : 'none';
+    });
+    // Clicking anywhere outside closes it back up — same as any other
+    // small dropdown/popover in the app.
+    document.addEventListener('click', e => {
+      if(dropdown.style.display === 'none') return;
+      if(e.target.closest('.tl-scratchpad')) return;
+      dropdown.style.display = 'none';
+    });
+  }
+})();
+document.addEventListener('keydown', e => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if(tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return; // never hijack normal typing
+  // Ctrl (or Cmd, on Mac) held means the browser's OWN "jump to tab N"
+  // shortcut — a real, live bug had this app instead treating Ctrl+2
+  // exactly like a plain "2" and opening the Ticketmaster link, which
+  // both did the wrong thing AND ate the keypress the browser needed to
+  // switch tabs. This has to be checked before anything else below, not
+  // folded into the Alt check next to it — Ctrl doesn't mean "open a
+  // different platform," it means "this key isn't for this app at all."
+  if(e.ctrlKey || e.metaKey) return;
+  // Letter keys now being in play (for a group past 12 cards) raises
+  // the stakes of an accidental trigger — a stray keypress while a
+  // real dialog is open (Add Show, a prompt, anything) could otherwise
+  // fire this instead of whatever that dialog's own shortcut was meant
+  // to do. A focused <button> OUTSIDE any modal, though, is routinely
+  // just harmless leftover focus from clicking pin/collapse/copy/
+  // anything a moment earlier — a real, live problem showed this
+  // blocking the very next shortcut press after clicking almost any
+  // button on the page, which is a much more common (and much worse)
+  // situation than a genuine dialog having a focused button in it. Only
+  // an actually-typing context (input/textarea/contenteditable, already
+  // excluded above) or a button specifically WITHIN an open modal
+  // reliably means "leave this alone."
+  if(document.activeElement && document.activeElement !== document.body){
+    const isSafeButton = document.activeElement.tagName === 'BUTTON' && !document.activeElement.closest('.modal-overlay');
+    if(!isSafeButton) return;
+  }
+  // If a group is explicitly selected, it's the ONLY thing that's ever
+  // allowed to answer this — falling back to hover when a selection
+  // exists but doesn't resolve (e.g. it's pointing at a group from a
+  // sheet that's no longer active) used to silently substitute whatever
+  // the mouse happened to be resting over instead, which is exactly how
+  // this ended up opening "the wrong link from somewhere else": the
+  // person believed a specific tour was selected, and got a completely
+  // unrelated card's link instead with no indication why. Hover is only
+  // ever consulted when there's truly no selection to begin with.
+  const grid = tlSelectedGroupKey ? tlFindGridForGroupKey(tlSelectedGroupKey) : tlHoveredCardGrid;
+  if(!grid) return;
+  const idx = TL_OPEN_NTH_KEY_ORDER.indexOf(e.key.toLowerCase());
+  if(idx === -1) return;
+  const cards = Array.from(grid.children).filter(el => el.classList.contains('ticket'));
+  const card = cards[idx];
+  if(!card) return;
+  const useVivid = e.altKey;
+  const linkEl = card.querySelector(useVivid ? '.link-btn.site-vivid' : '.link-btn.site-tm');
+  if(!linkEl || !linkEl.href) return;
+  e.preventDefault();
+  window.open(linkEl.href, '_blank', 'noopener');
+  tlUpdateLastKeyIndicator(`${useVivid ? 'Alt+' : ''}${TL_OPEN_NTH_KEY_ORDER[idx].toUpperCase()} → ${useVivid ? 'VividSeats' : 'Ticketmaster'}`);
+});
+
 let sheetNameManuallyEdited = false;
 const SHEET_TYPE_DEFAULT_NAMES = { standard: null, usopen: 'US Open', broadway: 'Broadway', presale: 'Presale' };
 
@@ -5132,6 +5962,14 @@ function setActiveSheet(name){
   sortSelect.value = sortMode;
   openNotesKey = null;
   noteSnapshotOnOpen = null;
+  // A group selected for the number-key shortcuts almost certainly
+  // doesn't exist on a DIFFERENT sheet — leaving it set meant the
+  // shortcuts would silently find nothing here and fall through to
+  // whatever the mouse happened to be hovering instead, which read as
+  // "the shortcuts are broken/random" rather than "you switched sheets
+  // and need to reselect." Clearing it makes that state visible
+  // (nothing highlighted) instead of quietly wrong.
+  tlSelectedGroupKey = null;
   newOnly = false;
   newFilterBtn.classList.remove('active');
   archiveOnly = false;
@@ -5498,6 +6336,12 @@ function groupByShowCount(events){
 }
 
 function render(){
+  syncUrlWithState();
+  // Deferred one tick so the DOM has actually been rebuilt below before
+  // this looks for the heading to highlight — render() reassigns the
+  // list's innerHTML synchronously further down, and this needs to run
+  // after that, not before it.
+  requestAnimationFrame(tlMarkSelectedGroupInDom);
   if(historyViewActive){
     updateModeUI();
     renderHistoryView();
@@ -7804,6 +8648,28 @@ function renderBroadway(){
 // very next .day-grid via an adjacent-sibling rule. The section key is
 // just the heading text — unique within a given render in every case
 // this app produces one.
+// Big and obvious on purpose, unlike the small icon-sized buttons
+// elsewhere in the heading bar — this is the one action you'd want to
+// reach for repeatedly right after selecting a group (to re-copy the
+// link for one more tab, send it again, etc.), so it gets to be an
+// actual pill button with its own label instead of another small icon
+// you have to recognize/remember. Only ever appears on whichever
+// heading is currently selected. Pulled out as its own function since
+// it's now inserted two different ways: baked into a heading's own
+// HTML on a normal render (dayHeadingHtml), and injected directly by
+// the click handler when selecting a group WITHOUT a full render (see
+// the bar's click handler) — a full re-render of potentially hundreds
+// of cards just to toggle one heading's own state was a real,
+// noticeable delay, the opposite of what "select this for instant
+// shortcuts" should feel like.
+function tlCopyLinkButtonHtml(){
+  return `<button type="button" class="heading-copy-link-btn" data-action="copy-current-link" title="Copy this link again">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-copy"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="icon-check" style="display:none;"><polyline points="20 6 9 17 4 12"/></svg>
+    <span>Copy Link</span>
+  </button>`;
+}
+
 function dayHeadingHtml(label, extraHtml = '', pinKeys = null, sectionKeyOverride = null, extraClass = '', bulkCodeKeys = null, bulkReleaseKeys = null){
   const key = sectionKeyOverride || label;
   const collapsed = collapsedSections.has(key);
@@ -7869,10 +8735,25 @@ function dayHeadingHtml(label, extraHtml = '', pinKeys = null, sectionKeyOverrid
   const historyBtn = `<button type="button" class="icon-btn heading-history-btn" data-action="view-history-for-heading" data-heading="${escapeHtml(label)}" title="View passed/deleted shows for this tour in History">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l4 2" stroke-dasharray="1.8 1.8"/></svg>
   </button>`;
-  return `<div class="day-heading collapsible-heading ${extraClass} ${collapsed ? 'collapsed' : ''}" data-section="${escapeHtml(key)}">
+  // Whether this group is currently "in shortcut mode" — the number/
+  // Alt+number keys target it, and it's what carries into a shared or
+  // duplicated tab's link (?group=...). Highlighted with an outline the
+  // same way whether it got there by being clicked or restored from a
+  // link (see tlMarkSelectedGroupInDom).
+  const isShortcutSelected = typeof tlSelectedGroupKey !== 'undefined' && tlSelectedGroupKey === key;
+  const copyLinkBtn = isShortcutSelected ? tlCopyLinkButtonHtml() : '';
+  // Collapse/expand is its own dedicated button now, deliberately
+  // separated from both the bar itself (which toggles shortcut mode —
+  // see the click handler) and the heading's own name (which copies it —
+  // also see the click handler). All three used to be tangled into one
+  // "click the heading" action, which meant, for instance, that
+  // selecting a group for shortcuts also collapsed it every time.
+  const collapseBtn = `<button type="button" class="icon-btn heading-collapse-btn" data-action="collapse-heading" data-section="${escapeHtml(key)}" title="${collapsed ? 'Expand' : 'Collapse'} this section">
     <svg class="collapse-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg>
-    <span class="heading-label">${escapeHtml(label)}</span>${extraHtml}
-    <div class="heading-icons">${bulkReleaseBtn}${tourNoteBtn}${bulkCodeBtn}${historyBtn}${pinBtn}</div>
+  </button>`;
+  return `<div class="day-heading collapsible-heading ${extraClass} ${collapsed ? 'collapsed' : ''} ${isShortcutSelected ? 'tl-shortcut-selected' : ''}" data-section="${escapeHtml(key)}">
+    <span class="heading-label" data-action="copy-heading-name" data-copy-text="${escapeHtml(label)}" title="Click to copy &quot;${escapeHtml(label)}&quot;">${escapeHtml(label)}</span>${extraHtml}${copyLinkBtn}
+    <div class="heading-icons">${bulkReleaseBtn}${tourNoteBtn}${bulkCodeBtn}${historyBtn}${pinBtn}${collapseBtn}</div>
   </div>${tourNotePreview}`;
 }
 
@@ -7975,7 +8856,7 @@ sortSelect.addEventListener('change', () => {
 // are the whole point of that sheet. US Open ignores this entirely (its
 // dropdown is hidden; it always groups by venue category).
 function defaultSortModeForMode(mode){
-  return mode === 'presale' ? 'date' : 'name';
+  return mode === 'presale' ? 'date' : 'shows';
 }
 
 // Copies a ticket link to the clipboard and briefly shows a checkmark on
@@ -8016,9 +8897,50 @@ listRoot.addEventListener('click', async e => {
     return;
   }
 
-  // Toggle a section open/closed. Pure DOM manipulation here (no full
-  // render) — the CSS adjacent-sibling rule does the actual hiding, so
-  // toggling is instant and doesn't disturb scroll position elsewhere.
+  // Checked BEFORE the collapsible-heading toggle below, same reasoning
+  // as every other icon button living inside a heading.
+  const copyHeadingNameEl = e.target.closest('[data-action="copy-heading-name"]');
+  if(copyHeadingNameEl){
+    copyToClipboard(copyHeadingNameEl.dataset.copyText).then(ok => {
+      if(!ok) return;
+      copyHeadingNameEl.classList.add('copied-flash');
+      clearTimeout(copyHeadingNameEl._copyTimeout);
+      copyHeadingNameEl._copyTimeout = setTimeout(() => copyHeadingNameEl.classList.remove('copied-flash'), 900);
+    });
+    return;
+  }
+
+  // The big "Copy Link" pill that appears once a group is selected —
+  // re-copies the CURRENT URL (not a fixed value baked in at render
+  // time), since the address bar could plausibly have changed since
+  // this button was drawn.
+  const copyCurrentLinkBtn = e.target.closest('[data-action="copy-current-link"]');
+  if(copyCurrentLinkBtn){
+    copyToClipboard(location.href).then(ok => {
+      if(!ok) return;
+      copyCurrentLinkBtn.classList.add('copied');
+      clearTimeout(copyCurrentLinkBtn._copyTimeout);
+      copyCurrentLinkBtn._copyTimeout = setTimeout(() => copyCurrentLinkBtn.classList.remove('copied'), 1400);
+    });
+    return;
+  }
+
+  // Checked BEFORE the collapsible-heading toggle below — this IS the
+  // collapse/expand action now, moved into its own dedicated button
+  // specifically so clicking the rest of the bar (below) can mean
+  // something else entirely instead of double-booking one click for
+  // both.
+  const collapseHeadingBtn = e.target.closest('[data-action="collapse-heading"]');
+  if(collapseHeadingBtn){
+    const key = collapseHeadingBtn.dataset.section;
+    const headingEl = collapseHeadingBtn.closest('.day-heading');
+    if(collapsedSections.has(key)) collapsedSections.delete(key);
+    else collapsedSections.add(key);
+    if(headingEl) headingEl.classList.toggle('collapsed');
+    updateExpandCollapseBtnLabel();
+    return;
+  }
+
   // Checked BEFORE the collapsible-heading toggle below, since the
   // group-pin button lives inside the heading and would otherwise also
   // trigger a collapse/expand on the same click.
@@ -8144,22 +9066,64 @@ listRoot.addEventListener('click', async e => {
   if(heading){
     // If a notes panel is currently open, this click's first job is
     // just closing it — same "background is locked" rule as every other
-    // click while notes is open. Collapsing the heading on this SAME
-    // click would hide the very card whose panel just closed, and the
-    // net effect felt like "clicking this closes notes AND makes my
-    // card disappear, so I have to re-expand and re-open it just to get
-    // back to where I was." A second, separate click on the heading
-    // (once notes is already closed) collapses it normally.
+    // click while notes is open.
     if(openNotesKey !== null){
       closeNotesPanel();
       render();
       return;
     }
+    // Clicking anywhere else on the bar (not the name, not the collapse
+    // button, not any of the other icons — all handled above already)
+    // toggles this group in or out of "shortcut mode": the number/
+    // Alt+number keys target whichever group is currently on, and it's
+    // what rides along into a shared or duplicated tab's link
+    // (?group=...). Toggling rather than only ever turning it on means
+    // clicking an already-selected bar again turns it back off, instead
+    // of needing to go select a DIFFERENT group just to get out of it.
+    //
+    // Updates the DOM directly here instead of calling the normal
+    // render() — a real, noticeable delay before the outline/Copy Link
+    // button appeared turned out to be a full re-render of potentially
+    // hundreds of cards, just to toggle ONE heading's own state.
+    // Nothing about which events are shown/sorted/filtered changes from
+    // this click, so nothing else actually needed to be rebuilt.
     const key = heading.dataset.section;
-    if(collapsedSections.has(key)) collapsedSections.delete(key);
-    else collapsedSections.add(key);
-    heading.classList.toggle('collapsed');
-    updateExpandCollapseBtnLabel();
+    const turningOn = tlSelectedGroupKey !== key;
+    const prevKey = tlSelectedGroupKey;
+    tlSelectedGroupKey = turningOn ? key : null;
+    syncUrlWithState();
+
+    if(prevKey && prevKey !== key){
+      const prevHeading = listRoot.querySelector(`.day-heading[data-section="${CSS.escape(prevKey)}"]`);
+      if(prevHeading){
+        prevHeading.classList.remove('tl-shortcut-selected');
+        const oldBtn = prevHeading.querySelector('[data-action="copy-current-link"]');
+        if(oldBtn) oldBtn.remove();
+      }
+    }
+    if(turningOn){
+      heading.classList.add('tl-shortcut-selected');
+      if(!heading.querySelector('[data-action="copy-current-link"]')){
+        const nameEl = heading.querySelector('.heading-label');
+        if(nameEl) nameEl.insertAdjacentHTML('afterend', tlCopyLinkButtonHtml());
+      }
+      // Copies the link the instant a group is selected — that's the
+      // URL someone actually wants in hand right after selecting a
+      // group (to paste into a new tab, send to another device, etc.),
+      // so there's no reason to make that a second, separate step. The
+      // Copy Link button just injected above covers re-copying it
+      // again later, without needing to toggle off and back on.
+      copyToClipboard(location.href);
+    } else {
+      heading.classList.remove('tl-shortcut-selected');
+      const btn = heading.querySelector('[data-action="copy-current-link"]');
+      if(btn) btn.remove();
+    }
+    // Still needed directly (not just via the class/button toggling
+    // above): this is what moves the number-key badges from the
+    // previous group's cards onto the new one's, in that same
+    // lightweight, targeted way rather than a full render().
+    tlMarkSelectedGroupInDom();
     return;
   }
 
@@ -8557,7 +9521,7 @@ listRoot.addEventListener('input', e => {
   if(textarea){
     const key = textarea.dataset.key;
     getAnnotation(key).note = textarea.value;
-    saveNotesSoon();
+    saveNotesSoon(key);
     return;
   }
 
@@ -8789,7 +9753,59 @@ window.addEventListener('beforeunload', () => { saveNotesNow(); });
 let searchInputUserEditedAt = 0;
 searchInput.addEventListener('keydown', () => { searchInputUserEditedAt = Date.now(); });
 searchInput.addEventListener('paste', () => { searchInputUserEditedAt = Date.now(); });
+
+// ---------- Shareable-link state (no-login variant only) ----------
+// With no accounts to keep separate tabs signed into their own view,
+// the URL itself carries "which sheet, which search" instead — copy
+// the address bar and open it in a new tab (or send it to someone
+// else) and it lands in exactly the same place, which is the whole
+// point of not needing to log in per device/tab anymore.
+function getSearchQueryFromUrl(){
+  try{ return new URLSearchParams(location.search).get('q') || ''; }catch(e){ return ''; }
+}
+function getSheetNameFromUrl(){
+  try{ return new URLSearchParams(location.search).get('sheet') || ''; }catch(e){ return ''; }
+}
+function getGroupKeyFromUrl(){
+  try{ return new URLSearchParams(location.search).get('group') || ''; }catch(e){ return ''; }
+}
+// Called from render() every time anything state-relevant changes —
+// history.replaceState is cheap and doesn't add browser-history entries,
+// so this can run on every render without it becoming a "back button"
+// nuisance. While searching, the URL reflects the search itself; when
+// not, it reflects the active sheet — so whichever one you'd actually
+// want restored on a fresh open is the one that's actually there.
+// "group" (a clicked-on tour heading, selected for the number-key
+// shortcuts) rides along independently of that — it's about which
+// section the shortcuts apply to, unrelated to search vs. sheet.
+function syncUrlWithState(){
+  try{
+    const params = new URLSearchParams();
+    const query = searchInput.value.trim();
+    if(query) params.set('q', query);
+    else if(activeSheetName) params.set('sheet', activeSheetName);
+    if(tlSelectedGroupKey) params.set('group', tlSelectedGroupKey);
+    const search = params.toString();
+    const newUrl = location.pathname + (search ? ('?' + search) : '') + location.hash;
+    const curUrl = location.pathname + location.search + location.hash;
+    if(newUrl !== curUrl) history.replaceState(null, '', newUrl);
+  }catch(e){ /* URL API trouble shouldn't take the whole app down over it */ }
+}
+
 function clearStaleSearchValue(){
+  // A search explicitly carried in the link (?q=...) is the whole
+  // reason this no-login variant supports opening multiple tabs at
+  // different places — it always wins over the "clear stale browser-
+  // restored text" cleanup below, and re-asserts itself if anything
+  // (browser form restore, this same cleanup) tries to touch the box.
+  const urlQuery = getSearchQueryFromUrl();
+  if(urlQuery){
+    if(searchInput.value !== urlQuery){
+      searchInput.value = urlQuery;
+      searchInput.dispatchEvent(new Event('input', { bubbles:true }));
+    }
+    return;
+  }
   if(!searchInput.value) return;
   if(Date.now() - searchInputUserEditedAt < 1500) return; // don't clobber a real, just-typed search
   searchInput.value = '';
@@ -8811,39 +9827,18 @@ async function initApp(){
   // runs, so a single clear here isn't enough on its own; the extra
   // catch points registered below are what actually make it reliable.
   clearStaleSearchValue();
-  // Restores whoever was logged in last time on this device — saved by
-  // the login handler above, cleared by explicit log-out. Set before
-  // the first render so the UI (and every visibility check that depends
-  // on currentUser) is correct from the very first paint, not just
-  // after loadAllFromRemote finishes.
-  const savedUser = localStorage.getItem('ticketWatchLoggedInAs');
-  if(savedUser){
-    currentUser = savedUser;
-    adminModeOn = true;
-  }
+  // No-login variant: currentUser/adminModeOn are fixed constants (see
+  // their declarations near the top), so there's no saved-login to
+  // restore and no "does this account still exist" check to run —
+  // both were only ever about a real per-device login state.
   updateAdminModeUI();
-  if(DEFAULT_SYNC_URL){
-    syncUrl = DEFAULT_SYNC_URL;
+  if(SUPABASE_URL){
+    syncUrl = SUPABASE_URL; // still just a truthy flag now — the Supabase functions use SUPABASE_URL/SUPABASE_KEY directly
   }
   await loadAllFromRemote();
-  // A device can be left claiming to be logged in as someone who
-  // doesn't actually exist in the real account list — the exact ghost-
-  // session state the "account creation silently failed but currentUser
-  // got set anyway" bug (now fixed above, in createAccountFlow) used to
-  // leave behind, and the kind of thing that could still happen if an
-  // account is ever removed from the Accounts sheet directly. Only
-  // checked when PEOPLE genuinely loaded something real (not empty) —
-  // an empty list here just as easily means the fetch itself failed
-  // (no internet, Google Sheets briefly unreachable), and logging
-  // someone out over a connectivity blip instead of an actual missing
-  // account would be a worse bug than the one this is fixing.
-  if(currentUser && PEOPLE.length && !PEOPLE.some(p => p.name === currentUser)){
-    currentUser = null;
-    adminModeOn = false;
-    localStorage.removeItem('ticketWatchLoggedInAs');
-    updateAdminModeUI();
-  }
   if(syncUrl) startSyncPolling();
+  if(syncUrl) startRealtimeSync();
+  tlLoadInitialLastKey();
   // Signals the companion extension that the app has actually finished
   // its real work — restoring login AND fetching sheets/events from
   // Google Sheets — not just that the page's HTML finished loading.

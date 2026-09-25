@@ -406,12 +406,15 @@
      collapsed, so scanning a long list of collapsed tours still tells
      you how big each one is and when it runs without opening any of
      them. */
-  .heading-summary{font-size:11.5px;color:var(--muted);font-weight:500;white-space:nowrap;}
+  .heading-summary{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--text);font-weight:700;white-space:nowrap;}
   /* The visual companion to that text — a quick, at-a-glance read of
      relative tour size when scanning a long collapsed list, without
-     needing to stop and read the number itself for each one. */
-  .heading-gauge{display:inline-block;width:26px;height:6px;background:rgba(255,255,255,.14);border-radius:3px;overflow:hidden;vertical-align:middle;margin-right:2px;}
-  .heading-gauge-fill{display:block;height:100%;background:var(--teal);border-radius:3px;}
+     needing to stop and read the number itself for each one. Sized up
+     substantially from the first pass at this — a bar that's supposed
+     to be readable at a glance while scrolling isn't much good at a
+     couple pixels tall. */
+  .heading-gauge{display:inline-block;width:100px;height:18px;background:rgba(255,255,255,.16);border-radius:6px;overflow:hidden;vertical-align:middle;margin-right:8px;border:1px solid rgba(255,255,255,.08);}
+  .heading-gauge-fill{display:block;height:100%;background:var(--teal);border-radius:6px 0 0 6px;}
   /* Heading-row icon buttons (pin, collapse, note, history) sized up
      from the compact per-card buttons elsewhere — this row has real
      room to spare, and "bigger, rounder, easier to click and see" was
@@ -442,7 +445,61 @@
   .collapse-caret{flex:0 0 auto;opacity:.55;transition:transform .15s ease;}
   .day-heading.collapsible-heading.collapsed .collapse-caret{transform:rotate(-90deg);}
   .day-heading.collapsible-heading.collapsed + .day-grid{display:none;}
-  .day-heading.collapsible-heading.collapsed{opacity:.7;}
+  /* Collapsed tours flow into a compact multi-column grid instead of
+     one full-width bar each — inline-block wrapping does this without
+     needing to touch how the underlying HTML gets built at all: a
+     heading that ISN'T collapsed is still a normal block element,
+     which naturally breaks the inline flow and forces a new line
+     around itself, so an expanded/selected tour still gets its own
+     full-width row exactly where it sits, with any collapsed tiles
+     before and after it still flowing normally on their own lines.
+     Only the title/gauge/summary show here — the bulk-open, note,
+     history, pin and collapse buttons all tuck away (see further
+     below) since a tile this size has no room for them and, more to
+     the point, no real use for them until it's actually open. */
+  .day-heading.collapsible-heading.collapsed{
+    display:inline-block; vertical-align:top;
+    /* 4 tiles at exactly 25% width, each ALSO carrying a 12px trailing
+       margin (including the last one in the row, since nothing
+       distinguishes it from the others here) added up to just OVER
+       100% total width — enough to push that 4th tile down to its own
+       new line instead of sharing the row with the other three,
+       leaving a visible empty gap exactly where the 4th column should
+       have been. Subtracting the full 12px of margin from the width
+       itself (not just a partial fudge factor) accounts for that
+       trailing margin properly, with a couple pixels of slack on top
+       for any rounding. */
+    width:calc(25% - 16px); margin:0 12px 12px 0;
+    padding:10px 12px; cursor:pointer;
+    /* A tour name long enough to wrap to two lines made that one tile
+       taller than its neighbors in the same row, with nothing keeping
+       their bottom edges lined up — a real screenshot showed exactly
+       that jagged, uneven look. A consistent minimum height (generous
+       enough for a two-line title plus the gauge and summary line)
+       means a short title just leaves a little empty space below it
+       instead, which reads as tidy rather than broken. */
+    min-height:112px;
+  }
+  .day-heading.collapsible-heading.collapsed:hover{border-color:#4a4950;background:var(--card-hover);}
+  .day-heading.collapsible-heading.collapsed .heading-icons,
+  .day-heading.collapsible-heading.collapsed .heading-copy-link-btn,
+  .day-heading.collapsible-heading.collapsed .bulk-open-links{
+    display:none;
+  }
+  .day-heading.collapsible-heading.collapsed .heading-label{
+    display:block; white-space:normal; margin-bottom:4px;
+  }
+  .day-heading.collapsible-heading.collapsed .heading-gauge,
+  .day-heading.collapsible-heading.collapsed .heading-summary{
+    display:block; margin:0;
+  }
+  .day-heading.collapsible-heading.collapsed .heading-gauge{margin-bottom:4px;}
+  @media (max-width:1400px){
+    .day-heading.collapsible-heading.collapsed{width:calc(33.333% - 16px);}
+  }
+  @media (max-width:900px){
+    .day-heading.collapsible-heading.collapsed{width:calc(50% - 16px);}
+  }
   /* The heading currently "selected" for the number-key shortcuts —
      see the keydown/click handlers further down. */
   .day-heading.tl-shortcut-selected{outline:2px solid var(--teal, #4fc8bf);outline-offset:-2px;border-radius:6px;}
@@ -3494,7 +3551,7 @@ function tlSaveExpandCycleState(){
   try{ localStorage.setItem('tlExpandCycle_' + activeSheetName, String(expandCycleState)); }catch(e){}
 }
 function tlRestoreExpandCycleState(){
-  if(!activeSheetName) return 2;
+  if(!activeSheetName) return 0;
   try{
     const raw = localStorage.getItem('tlExpandCycle_' + activeSheetName);
     if(raw !== null){
@@ -3502,7 +3559,12 @@ function tlRestoreExpandCycleState(){
       if(n === 0 || n === 1 || n === 2) return n;
     }
   }catch(e){}
-  return 2; // default: fully expanded, same as it's always been
+  // Compact/collapsed is the default now for a sheet with no saved
+  // preference yet — scrolling past hundreds of fully expanded cards
+  // just to find a specific tour was the whole complaint this compact
+  // view exists to solve, so a brand new sheet should open INTO that
+  // view rather than requiring a manual collapse first.
+  return 0;
 }
 expandCollapseBtn.addEventListener('click', () => {
   applyExpandCycleState((expandCycleState + 1) % 3);
@@ -4363,6 +4425,26 @@ async function pollRemote(){
 // handleCsvUpload's alert so a failure comes with the real reason
 // attached instead of a generic "didn't save."
 let lastPushError = null;
+// Every push for a sheet does a wholesale DELETE-then-INSERT of that
+// sheet's rows (see supabaseReplaceSheet) — if two pushes for the same
+// sheet ever actually ran AT THE SAME TIME (a CSV import, then Mark
+// Seen or Archive Past clicked again before that first save finished —
+// entirely realistic, not a contrived edge case), their deletes and
+// inserts could interleave: one push's DELETE landing between the
+// other's DELETE and INSERT would wipe out data the other push was
+// still in the middle of writing. pendingPushCount above only ever
+// protected against the background POLL reading mid-write — nothing
+// stopped two pushes from racing against EACH OTHER, which is exactly
+// the shape of a real report of freshly imported data vanishing the
+// moment another action triggered a second save. Chaining every push
+// onto the same promise forces them to run strictly one at a time —
+// each one sees the fully-settled result of the last before it starts.
+let pushChain = Promise.resolve();
+function queuePush(sheetName, mode, payloadEvents){
+  const result = pushChain.then(() => pushSheetEvents(sheetName, mode, payloadEvents));
+  pushChain = result.catch(() => {}); // one push failing must never jam up every push after it
+  return result;
+}
 async function pushSheetEvents(sheetName, mode, payloadEvents){
   if(!syncUrl){
     setSyncStatus('Not connected — this change was not saved.', 'error');
@@ -4394,7 +4476,7 @@ async function pushActiveSheetToRemote(){
     const ann = getAnnotation(eventKey(ev));
     return { ...ev, note: ann.note || '', rating: ann.rating || 0, pinned: !!ann.pinned, sections: ann.sections || [], isNew: !!ann.isNew, archived: !!ann.archived, noteHistory: ann.noteHistory || [], priceHistory: ann.priceHistory || [], extraLinks: ann.extraLinks || [] };
   });
-  return await pushSheetEvents(name, mode, payloadEvents);
+  return await queuePush(name, mode, payloadEvents);
 }
 
 // Saves an edit made to a cross-sheet search result back to the sheet it
@@ -5746,7 +5828,7 @@ function tlMarkSelectedGroupInDom(){
     const badge = document.createElement('div');
     badge.className = 'tl-shortcut-badge';
     badge.textContent = keyLabel;
-    badge.title = `Press "${keyLabel}" for Ticketmaster — hold Alt for VividSeats instead`;
+    badge.title = `Press "${keyLabel}" for this show's primary link — hold Alt for VividSeats instead`;
     card.appendChild(badge);
   });
 }
@@ -5917,11 +5999,25 @@ document.addEventListener('keydown', e => {
   const card = cards[idx];
   if(!card) return;
   const useVivid = e.altKey;
-  const linkEl = card.querySelector(useVivid ? '.link-btn.site-vivid' : '.link-btn.site-tm');
+  // The primary link is always the FIRST link button in the card
+  // regardless of which actual platform it is (Ticketmaster, Seatgeek,
+  // Evenue, AXS, whatever that specific show's primary site happens to
+  // be) — a real screenshot showed exactly this: two of eight cards had
+  // Seatgeek/Evenue as their primary instead of Ticketmaster, and this
+  // used to hardcode looking for a Ticketmaster-specific button
+  // specifically, silently doing nothing on those two cards while the
+  // Ticketmaster ones worked fine. Alt still means VividSeats
+  // specifically, regardless of what the primary is — that part was
+  // always a deliberate, explicit platform choice, not "whatever's
+  // first."
+  const linkEl = useVivid
+    ? card.querySelector('.link-btn.site-vivid')
+    : card.querySelector('.ticket-actions .link-btn');
   if(!linkEl || !linkEl.href) return;
   e.preventDefault();
   window.open(linkEl.href, '_blank', 'noopener');
-  tlUpdateLastKeyIndicator(`${useVivid ? 'Alt+' : ''}${TL_OPEN_NTH_KEY_ORDER[idx].toUpperCase()} → ${useVivid ? 'VividSeats' : 'Ticketmaster'}`);
+  const platformLabel = useVivid ? 'VividSeats' : ((linkEl.textContent || '').trim() || 'Primary');
+  tlUpdateLastKeyIndicator(`${useVivid ? 'Alt+' : ''}${TL_OPEN_NTH_KEY_ORDER[idx].toUpperCase()} → ${platformLabel}`);
 });
 
 let sheetNameManuallyEdited = false;
@@ -6396,8 +6492,11 @@ function render(){
   // Deferred one tick so the DOM has actually been rebuilt below before
   // this looks for the heading to highlight — render() reassigns the
   // list's innerHTML synchronously further down, and this needs to run
-  // after that, not before it.
+  // after that, not before it. Same reasoning for the gauge bars right
+  // next to it — they need every heading for this render to already be
+  // in the DOM before they can be measured against each other.
   requestAnimationFrame(tlMarkSelectedGroupInDom);
+  requestAnimationFrame(tlNormalizeGaugeBars);
   if(historyViewActive){
     updateModeUI();
     renderHistoryView();
@@ -7057,8 +7156,8 @@ function renderStandard(){
   // the column count is actually used — otherwise each 1-card group got
   // its own single-item grid and every card ended up in column 1.
   const htmlParts = [];
-  if((sortMode === 'name' || sortMode === 'venue') && groups.some(g => g.showHeading)){
-    htmlParts.push(sortMode === 'name' ? combinedNameJumpBarHtml(groups) : nameJumpBarHtml(groups));
+  if((sortMode === 'name' || sortMode === 'venue' || sortMode === 'shows') && groups.some(g => g.showHeading)){
+    htmlParts.push((sortMode === 'name' || sortMode === 'shows') ? combinedNameJumpBarHtml(groups) : nameJumpBarHtml(groups));
   }
   if(pinned.length){
     // Pinned events get the same organization as everything else — e.g.
@@ -8644,8 +8743,18 @@ function renderBroadway(){
     : groupByName(rest); // 'name' and default
 
   let html = '';
-  if((sortMode === 'name' || sortMode === 'venue') && topGroups.some(g => g.showHeading)){
-    html += sortMode === 'name' ? combinedNameJumpBarHtml(topGroups) : nameJumpBarHtml(topGroups);
+  // The A-Z letter strip only ever needed sortMode === 'name' because
+  // that's genuinely how it used to work — but its actual letter
+  // lookup already works from each heading's own first letter
+  // regardless of what order the groups happen to be displayed in, so
+  // there was never a real reason it couldn't also show for "By tour
+  // size." Since that became the default sort a while back, this bar
+  // — a real, useful way to jump straight to a tour instead of
+  // scrolling past everything before it — was effectively hidden for
+  // most people the whole time without anyone having decided that on
+  // purpose.
+  if((sortMode === 'name' || sortMode === 'venue' || sortMode === 'shows') && topGroups.some(g => g.showHeading)){
+    html += (sortMode === 'name' || sortMode === 'shows') ? combinedNameJumpBarHtml(topGroups) : nameJumpBarHtml(topGroups);
   }
 
   if(pinned.length){
@@ -8747,14 +8856,34 @@ function tlGroupSummaryText(events){
 // A real, visual gauge — not just the number in the text above — so
 // scanning a long collapsed list shows relative tour size at a glance
 // (a quick "which of these is actually a big tour" read) without
-// having to stop and read digits for each one. Scaled against a fixed
-// 15-show reference rather than whatever the biggest tour on THIS
-// sheet happens to be, so one tour's bar means the same thing whether
-// you're comparing it within a small sheet or a huge one.
+// having to stop and read digits for each one. Scaled against the
+// BIGGEST tour actually on the current sheet, not an arbitrary fixed
+// number — a fixed reference point (the first version of this used 15)
+// doesn't mean anything concrete on its own, whereas "this bar is full,
+// so it's the biggest thing here" is immediately legible without
+// needing any external reference at all. The percentage gets filled in
+// by tlNormalizeGaugeBars right after render, once every bar for this
+// sheet actually exists to compare against — this only carries the raw
+// count for that pass to use.
 function tlGroupGaugeHtml(count){
   if(!count) return '';
-  const pct = Math.max(6, Math.min(100, Math.round((count / 15) * 100)));
-  return `<span class="heading-gauge" title="${count} show${count === 1 ? '' : 's'}"><span class="heading-gauge-fill" style="width:${pct}%"></span></span>`;
+  return `<span class="heading-gauge" data-count="${count}" title="${count} show${count === 1 ? '' : 's'}"><span class="heading-gauge-fill" style="width:0%"></span></span>`;
+}
+// Run once right after the cards for a sheet are actually in the DOM —
+// finds every gauge just drawn, figures out the largest count among
+// them, and sets each bar's width as a fraction of THAT, so "full bar"
+// always means "the biggest tour currently on screen" rather than some
+// arbitrary number that might rarely (or always) get reached.
+function tlNormalizeGaugeBars(){
+  const gauges = Array.from(listRoot.querySelectorAll('.heading-gauge[data-count]'));
+  if(!gauges.length) return;
+  const max = Math.max(...gauges.map(g => parseInt(g.dataset.count, 10) || 0));
+  if(!max) return;
+  gauges.forEach(g => {
+    const count = parseInt(g.dataset.count, 10) || 0;
+    const fill = g.querySelector('.heading-gauge-fill');
+    if(fill) fill.style.width = Math.max(6, Math.round((count / max) * 100)) + '%';
+  });
 }
 
 function dayHeadingHtml(label, extraHtml = '', pinKeys = null, sectionKeyOverride = null, extraClass = '', bulkCodeKeys = null, bulkReleaseKeys = null, groupEvents = null){
@@ -9171,6 +9300,16 @@ listRoot.addEventListener('click', async e => {
     // clicking an already-selected bar again turns it back off, instead
     // of needing to go select a DIFFERENT group just to get out of it.
     //
+    // A collapsed tile is a special case, though: expanding it out of
+    // the compact grid IS the "I want this one" signal all by itself —
+    // there's no separate button visible on a tile that small to select
+    // it with anyway — so clicking one always expands AND selects
+    // together, rather than toggling. Clicking an expanded/selected
+    // heading's bar again reverses BOTH at once too — deselects it AND
+    // collapses it back into the compact grid, rather than leaving it
+    // sitting there expanded-but-deselected, which was its own kind of
+    // confusing in-between state.
+    //
     // Updates the DOM directly here instead of calling the normal
     // render() — a real, noticeable delay before the outline/Copy Link
     // button appeared turned out to be a full re-render of potentially
@@ -9178,7 +9317,12 @@ listRoot.addEventListener('click', async e => {
     // Nothing about which events are shown/sorted/filtered changes from
     // this click, so nothing else actually needed to be rebuilt.
     const key = heading.dataset.section;
-    const turningOn = tlSelectedGroupKey !== key;
+    const wasCollapsed = heading.classList.contains('collapsed');
+    if(wasCollapsed){
+      collapsedSections.delete(key);
+      heading.classList.remove('collapsed');
+    }
+    const turningOn = wasCollapsed ? true : tlSelectedGroupKey !== key;
     const prevKey = tlSelectedGroupKey;
     tlSelectedGroupKey = turningOn ? key : null;
     syncUrlWithState();
@@ -9194,8 +9338,17 @@ listRoot.addEventListener('click', async e => {
     if(turningOn){
       heading.classList.add('tl-shortcut-selected');
       if(!heading.querySelector('[data-action="copy-current-link"]')){
-        const nameEl = heading.querySelector('.heading-label');
-        if(nameEl) nameEl.insertAdjacentHTML('afterend', tlCopyLinkButtonHtml());
+        // Inserted right before the icon row (always present, always
+        // last), not right after the name — a real screenshot showed
+        // exactly what inserting it straight after the name produces:
+        // "Journey · Copy Link · [gauge] · 4 shows..." with the button
+        // stuck in the middle, ahead of the gauge/summary it should
+        // come after. A normal render() builds this in the right order
+        // from scratch every time; this direct DOM insert (done
+        // specifically to skip that full render for speed) has to
+        // match that same order by hand.
+        const iconsEl = heading.querySelector('.heading-icons');
+        if(iconsEl) iconsEl.insertAdjacentHTML('beforebegin', tlCopyLinkButtonHtml());
       }
       // Copies the link the instant a group is selected — that's the
       // URL someone actually wants in hand right after selecting a
@@ -9208,6 +9361,12 @@ listRoot.addEventListener('click', async e => {
       heading.classList.remove('tl-shortcut-selected');
       const btn = heading.querySelector('[data-action="copy-current-link"]');
       if(btn) btn.remove();
+      // Collapsing it back is the other half of that same reversal —
+      // only when it wasn't ALREADY the click that just expanded it a
+      // moment ago (that case already handled turningOn=true above and
+      // never reaches here).
+      collapsedSections.add(key);
+      heading.classList.add('collapsed');
     }
     // Still needed directly (not just via the class/button toggling
     // above): this is what moves the number-key badges from the
